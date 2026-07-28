@@ -255,17 +255,79 @@ img.choicePrompt {
     font-size: 13px;
 }
 
-.calculation {
+.metadata-tag {
     font-size: 12px;
-    font-style: italic;
-    color: #333;
-    background: #f4f6f8;
-    border-left: 3px solid #0056b3;
+    color: #495057;
+    background: #e9ecef;
+    border-left: 3px solid #6c757d;
     padding: 3px 6px;
     margin-top: 4px;
+    border-radius: 2px;
+}
+
+.calculation {
+    font-size: 12px;
+    color: #004085;
+    background: #cce5ff;
+    border-left: 3px solid #0056b3;
+    padding: 4px 8px;
+    margin-top: 4px;
     word-break: break-all;
+    border-radius: 2px;
+}
+
+.calc-desc {
+    font-size: 11px;
+    font-style: italic;
+    color: #495057;
+    margin-top: 2px;
 }
 """
+
+METADATA_DESCRIPTIONS = {
+    'start': ('ODK / SurveyCTO / KoboToolbox Metadata', 'Automated timestamp recorded when the survey session starts.'),
+    'end': ('ODK / SurveyCTO / KoboToolbox Metadata', 'Automated timestamp recorded when the survey session ends.'),
+    'today': ('ODK / SurveyCTO / KoboToolbox Metadata', 'Current date recorded when the survey is conducted.'),
+    'deviceid': ('ODK / SurveyCTO / KoboToolbox Metadata', 'Unique hardware identifier (IMEI/UUID) of the collection device.'),
+    'phonenumber': ('ODK / SurveyCTO / KoboToolbox Metadata', 'Phone number associated with the SIM card in the device.'),
+    'simserial': ('SurveyCTO / ODK Metadata', 'Serial number of the SIM card installed in the device.'),
+    'subscriberid': ('SurveyCTO / ODK Metadata', 'IMSI subscriber identifier of the SIM card.'),
+    'username': ('ODK / KoboToolbox / SurveyCTO Metadata', 'Username of the logged-in field enumerator.'),
+    'email': ('ODK / KoboToolbox Metadata', 'Email address of the logged-in enumerator.'),
+    'audit': ('ODK / SurveyCTO / KoboToolbox Metadata', 'User activity audit log file tracking timestamped interaction events.'),
+    'text-audit': ('SurveyCTO Metadata', 'Keystroke and text editing audit log file.'),
+    'start-geopoint': ('ODK / SurveyCTO Metadata', 'Initial GPS location captured upon opening the form.'),
+    'background-audio': ('ODK Metadata', 'Automated background audio recording captured during the survey.'),
+    'caseid': ('SurveyCTO Metadata', 'Case Management unique entity identifier.'),
+    'caseread': ('SurveyCTO Metadata', 'Case Management pre-loaded read field.'),
+    'casesave': ('SurveyCTO Metadata', 'Case Management saved status field.'),
+}
+
+def classify_calculation(formula_str):
+    """Categorize calculation formulas across platforms and return category + explanatory detail."""
+    if not formula_str:
+        return 'Calculation', ''
+    
+    formula_lower = formula_str.lower()
+    
+    if 'pulldata(' in formula_lower:
+        return 'Calculation (SurveyCTO / ODK External Dataset Query)', 'Queries pre-loaded CSV dataset or server case data using unique lookup key.'
+    elif 'jr:choice-name(' in formula_lower:
+        return 'Calculation (ODK / SurveyCTO Choice Label Lookup)', 'Resolves raw choice option code into human-readable label text.'
+    elif 'once(now())' in formula_lower or 'now()' in formula_lower:
+        return 'Calculation (Timestamp Capture)', 'Captures current date/time upon evaluation.'
+    elif 'format-date-time(' in formula_lower:
+        return 'Calculation (Date/Time Formatter)', 'Formats raw timestamp into custom formatted date/time string.'
+    elif 'decimal-date-time(' in formula_lower:
+        return 'Calculation (Duration / Datetime Math)', 'Converts datetime to decimal days for duration math.'
+    elif 'selected-at(' in formula_lower or 'count-selected(' in formula_lower:
+        return 'Calculation (ODK Multi-Select / Repeat Function)', 'Extracts or counts selected response options in multiple-choice field.'
+    elif 'substr(' in formula_lower or 'concat(' in formula_lower or 'string-length(' in formula_lower:
+        return 'Calculation (String Processing)', 'Performs text manipulation, substring extraction, or string concatenation.'
+    elif 'if(' in formula_lower:
+        return 'Calculation (Conditional Logic)', 'Evaluates conditional logic expression.'
+    else:
+        return 'Calculation', ''
 
 def extract_language_name(header_str):
     """Extract language identifier from column header string like 'label::English (en)' -> 'English (en)'."""
@@ -559,8 +621,8 @@ def build_codebook_html(parser, language='Default'):
         base_type = parts[0].lower()
         list_name = parts[1].strip() if len(parts) > 1 else ''
 
-        # Section header check
-        if base_type in ['begin_group', 'begin'] and raw_type.lower().startswith(('begin group', 'begin_group', 'begin repeat', 'begin_repeat')):
+        # Section header check for group and repeat beginnings
+        if raw_type.lower().startswith(('begin group', 'begin_group', 'begin repeat', 'begin_repeat')):
             label = get_lang_value(item['labels'], language) or item['name']
             if not label and 'group' in raw_type.lower():
                 label = item['name']
@@ -574,7 +636,8 @@ def build_codebook_html(parser, language='Default'):
             tbody.append(tr)
             continue
 
-        if base_type in ['end_group', 'end_repeat', 'end']:
+        # Group closing tags check (end_group / end group / end_repeat / end repeat)
+        if raw_type.lower() in ['end_group', 'end group', 'end_repeat', 'end repeat']:
             continue
 
         # Standard Field Row
@@ -597,10 +660,22 @@ def build_codebook_html(parser, language='Default'):
         if q_label:
             td_q.append(q_label)
 
-        # Calculation Display: Show formula badge if calculation exists or for calculate-type variables
-        if item['calculation']:
+        # Platform Metadata Tagging: If variable type is a known metadata field (start, end, today, deviceid, etc.)
+        if base_type in METADATA_DESCRIPTIONS:
+            platform_info, desc_text = METADATA_DESCRIPTIONS[base_type]
+            div_meta = soup.new_tag('div', attrs={'class': 'metadata-tag'})
+            div_meta.append(BeautifulSoup(f"<b>[{platform_info}]</b>: {desc_text}", 'html.parser'))
+            td_q.append(div_meta)
+
+        # Platform Calculation Display: Categorize calculation formula and display category badge + description
+        if item['calculation'] or base_type == 'calculate':
+            cat_title, cat_desc = classify_calculation(item['calculation'])
             div_calc = soup.new_tag('div', attrs={'class': 'calculation'})
-            div_calc.string = f"Calculation: {item['calculation']}"
+            div_calc.append(BeautifulSoup(f"<b>{cat_title}</b>: <code>{item['calculation']}</code>", 'html.parser'))
+            if cat_desc:
+                div_desc = soup.new_tag('div', attrs={'class': 'calc-desc'})
+                div_desc.string = cat_desc
+                div_calc.append(div_desc)
             td_q.append(div_calc)
 
         q_hint = get_lang_value(item['hints'], language)
