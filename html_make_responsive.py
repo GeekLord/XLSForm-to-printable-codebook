@@ -12,78 +12,60 @@ RESPONSIVE_STYLES = """
     margin: 0 !important;
 }
 
-/* Viewport and base */
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
     margin: 0;
     padding: 10px;
     font-family: "Arial Unicode MS", "Arial Unicode", Arial, sans-serif;
-    font-size: 14px;
-    line-height: 20px;
+    font-size: 13px;
+    line-height: 18px;
     color: #000;
     background: #fff;
 }
 
-/* Responsive container */
 .codebook-container {
     width: 100%;
     max-width: 1200px;
     margin: auto;
-    padding: 0 15px;
+    padding: 0 10px;
 }
 
 h4 {
     text-align: center;
     font-size: 18px;
-    margin: 15px 0;
-    padding-bottom: 10px;
+    margin: 10px 0;
+    padding-bottom: 8px;
     border-bottom: 2px solid #333;
 }
 
-/* Table base styles */
 table {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 20px;
+    table-layout: fixed;
 }
 
 th, td {
-    padding: 8px;
+    padding: 6px 8px;
     text-align: left;
     border: 1px solid #ddd;
     vertical-align: top;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
-/* Section headers - comprehensive selectors for all variations */
 td[colspan="3"],
-td[style*="background-color: #707070"],
-td[style*="background-color: #8C8C8C"],
-td[style*="background-color:#707070"],
-td[style*="background-color:#8C8C8C"],
-td[style*="background-color: rgb(112, 112, 112)"],
-td[style*="background-color: rgb(140, 140, 140)"],
-.section-header-dark,
-tr.gray td.section-header-dark {
-    background: #1a1a1a !important;
+.section-header-dark {
+    background: #2b2d42 !important;
     color: #fff !important;
     font-weight: bold;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
 }
 
-/* Also target any td with color white that looks like a header */
-td[style*="color: #FFFFFF"],
-td[style*="color:#FFFFFF"],
-td[style*="color: rgb(255, 255, 255)"] {
-    background: #1a1a1a !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-}
-
-/* Header styles */
 .headerCell {
-    background: #707070;
+    background: #4a4e69;
     color: #fff;
 }
 
@@ -91,14 +73,15 @@ td[style*="color: rgb(255, 255, 255)"] {
     margin: 0;
     font-size: 12px;
     font-weight: bold;
+    color: #fff;
 }
 
-/* Field column */
 .fieldCell {
     font-weight: bold;
-    color: #333;
-    width: 20%;
+    color: #222;
+    width: 22%;
     white-space: normal;
+    overflow-wrap: break-word;
     word-break: break-word;
 }
 
@@ -107,50 +90,51 @@ td[style*="color: rgb(255, 255, 255)"] {
     font-weight: normal;
 }
 
-/* Question column */
 .questionCell {
-    width: 60%;
+    width: 50%;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
-/* Answer column */
 .answerCell {
-    width: 20%;
+    width: 28%;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
-/* Section headers (gray rows) */
 tr.gray td {
     background: #fff;
 }
 
-/* Nested choice tables */
 td .table {
     margin: 0;
-    font-size: 13px;
+    font-size: 12px;
+    width: 100%;
+    table-layout: fixed;
 }
 
 td .table td {
-    padding: 4px;
+    padding: 2px 4px;
     border: none;
     border-bottom: 1px dotted #ccc;
+    vertical-align: top;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
-
-
-
 
 .response-note-cell {
-    width: 10px;
+    display: none;
 }
 
-/* Responsive breakpoints */
 @media screen and (max-width: 768px) {
     body {
-        font-size: 14px;
-        line-height: 22px;
+        font-size: 13px;
+        line-height: 18px;
         padding: 5px;
     }
     
     h4 {
-        font-size: 16px;
+        font-size: 15px;
     }
     
     .table-responsive {
@@ -163,7 +147,7 @@ td .table td {
     }
     
     th, td {
-        padding: 6px;
+        padding: 5px;
     }
     
     .headerCell h6 {
@@ -173,8 +157,8 @@ td .table td {
 
 @media screen and (max-width: 480px) {
     body {
-        font-size: 13px;
-        line-height: 20px;
+        font-size: 12px;
+        line-height: 16px;
         padding: 5px;
     }
     
@@ -184,42 +168,40 @@ td .table td {
     
     th, td {
         padding: 4px;
-        font-size: 12px;
-    }
-    
-    .fieldCell {
-        width: 25%;
-    }
-    
-    .questionCell {
-        width: 50%;
-    }
-    
-    .answerCell {
-        width: 25%;
+        font-size: 11px;
     }
 }
 
-/* Print styles */
 @media print {
-    @page { size: A4 landscape; margin: 10mm; }
-    @page :first { margin-top: 8mm; }
+    @page { 
+        size: A4 landscape; 
+        margin: 8mm 10mm 8mm 10mm; 
+    }
+    @page :first { 
+        margin-top: 8mm; 
+    }
     
     body {
-        font-size: 9pt;
-        line-height: 14pt;
+        font-size: 8.5pt;
+        line-height: 12pt;
         padding: 0;
         background: #fff;
     }
     
     h4 {
-        font-size: 14pt;
-        margin: 10px 0;
-        border-bottom: 1pt solid #333;
+        font-size: 13pt;
+        margin: 6px 0;
+        border-bottom: 1.5pt solid #333;
     }
     
     table {
         page-break-inside: auto;
+        table-layout: fixed;
+        width: 100%;
+    }
+    
+    thead {
+        display: table-header-group;
     }
     
     tr {
@@ -227,30 +209,31 @@ td .table td {
     }
     
     th, td {
-        padding: 4pt 6pt;
+        padding: 3pt 5pt;
         border: 0.5pt solid #999;
+        overflow-wrap: break-word;
+        word-break: break-word;
     }
     
     .headerCell {
-        background: #1a1a1a !important;
-        color: #fff !important;
+        background: #e9ecef !important;
+        color: #000 !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
     
+    .headerCell h6 {
+        color: #000 !important;
+        font-size: 9pt;
+    }
+    
     td[colspan="3"],
-    td[style*="background-color: #707070"],
-    td[style*="background-color: #8C8C8C"],
-    td[style*="background-color:#707070"],
-    td[style*="background-color:#8C8C8C"],
-    td[style*="background-color: rgb(112, 112, 112)"],
-    td[style*="background-color: rgb(140, 140, 140)"],
-    td[style*="color: #FFFFFF"],
-    td[style*="color:#FFFFFF"],
-    .section-header-dark,
-    tr.gray td.section-header-dark {
-        background: #1a1a1a !important;
-        color: #fff !important;
+    .section-header-dark {
+        background: #f0f4f8 !important;
+        color: #000 !important;
+        font-weight: bold;
+        border-top: 1.5pt solid #333 !important;
+        border-bottom: 1.5pt solid #333 !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
     }
@@ -260,24 +243,19 @@ td .table td {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
-    .section-header-dark {
-        background-color: #1a1a1a !important;
-        color: #fff !important;
-    }
 }
 
-/* User added styles */
 img.questionPrompt { 
-    max-width: 580px; 
-    padding: 3px; 
+    max-width: 100%; 
+    padding: 2px; 
     border: 1px solid #ddd; 
     display: block; 
-    margin: 5px 0; 
+    margin: 4px 0; 
 }
 
 img.choicePrompt { 
-    max-width: 130px; 
-    padding: 3px; 
+    max-width: 120px; 
+    padding: 2px; 
     border: 1px solid #ddd; 
 }
 
@@ -287,14 +265,42 @@ img.choicePrompt {
 }
 
 .relevance {
-    font-size: 12px;
+    font-size: 11px;
     font-style: italic;
-    color: green;
+    color: #2b7013;
 }
 
 .hint {
-    color: blue;
-    font-size: 13px;
+    color: #1864ab;
+    font-size: 11px;
+}
+
+.metadata-tag {
+    font-size: 11px;
+    color: #495057;
+    background: #f1f3f5;
+    border-left: 3px solid #6c757d;
+    padding: 2px 5px;
+    margin-top: 3px;
+    border-radius: 2px;
+}
+
+.calculation {
+    font-size: 11px;
+    color: #004085;
+    background: #e7f5ff;
+    border-left: 3px solid #1864ab;
+    padding: 3px 6px;
+    margin-top: 3px;
+    word-break: break-all;
+    border-radius: 2px;
+}
+
+.calc-desc {
+    font-size: 10px;
+    font-style: italic;
+    color: #495057;
+    margin-top: 1px;
 }
 """
 
@@ -307,27 +313,22 @@ def make_html_responsive(html_content):
     for td in soup.find_all('td', style=True):
         style = td.get('style', '')
         style_lower = style.lower()
-        # Check if it has light gray background that's hard to read
-        if ('#707070' in style or '#8C8C8C' in style or 
+        if ('#707070' in style or '#8c8c8c' in style or 
             'background-color: rgb(112' in style or 'background-color: rgb(140' in style or
-            'background-color:#707070' in style or 'background-color:#8C8C8C' in style):
-            # Parse and remove background-color and color properties
+            'background-color:#707070' in style or 'background-color:#8c8c8c' in style):
             new_styles = []
             for part in style.split(';'):
                 part_stripped = part.strip()
                 if not part_stripped:
                     continue
                 prop_name = part_stripped.split(':')[0].strip().lower()
-                # Skip background-color and color properties
                 if prop_name == 'background-color' or prop_name == 'color':
                     continue
                 new_styles.append(part_stripped)
-            # Rebuild style without the background/color
             if new_styles:
                 td['style'] = '; '.join(new_styles)
             else:
                 del td['style']
-            # Add a class so CSS can target it
             td['class'] = td.get('class', []) + ['section-header-dark']
     
     head = soup.find('head')
@@ -335,7 +336,6 @@ def make_html_responsive(html_content):
         head = soup.new_tag('head')
         soup.html.insert(0, head)
     
-    # Add viewport meta
     viewport = head.find('meta', attrs={'name': 'viewport'})
     if not viewport:
         viewport = soup.new_tag('meta', attrs={
@@ -344,7 +344,6 @@ def make_html_responsive(html_content):
         })
         head.insert(0, viewport)
     
-    # Replace or add styles
     style_tag = head.find('style')
     if style_tag:
         style_tag.string = RESPONSIVE_STYLES
@@ -353,13 +352,11 @@ def make_html_responsive(html_content):
         style_tag.string = RESPONSIVE_STYLES
         head.append(style_tag)
     
-    # Make container responsive
     container = soup.find('div', style=lambda x: x and 'width: 1000px' in str(x))
     if container:
         container['class'] = 'codebook-container'
         del container['style']
     
-    # Add table-responsive wrapper to main table
     main_table = soup.find('table', class_='table')
     if main_table:
         parent = main_table.parent
@@ -367,14 +364,15 @@ def make_html_responsive(html_content):
             wrapper = soup.new_tag('div', class_='table-responsive')
             main_table.wrap(wrapper)
             
-    # Add border to answer column via inline style as requested
+    # Fix nested choice cell width overflow
     for td in soup.find_all('td', style=True):
         style = td.get('style', '')
-        # Match <td style="width: 100%; padding-left: 3px; padding-right: 3px;">
         if 'width: 100%' in style and 'padding-left: 3px' in style and 'padding-right: 3px' in style:
-            # Append border-left style
-            if 'border-left' not in style:
-                td['style'] = style.rstrip(';') + '; border-left: 1px solid #999;'
+            # Replace width: 100% to prevent nested table overflow
+            new_style = style.replace('width: 100%;', '').replace('width:100%;', '').replace('width: 100%', '').strip()
+            if 'border-left' not in new_style:
+                new_style = new_style.rstrip(';') + '; border-left: 1px solid #ddd;'
+            td['style'] = new_style
     
     return str(soup)
 

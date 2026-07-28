@@ -10,12 +10,15 @@ The core objective of this project is to provide a direct Python pipeline (`xlsf
 
 ## Key Features & Capabilities
 
+- **Direct XLSForm Parsing**: Parses `.xlsx` files directly without requiring server uploads, processing `survey`, `choices`, and `settings` worksheets seamlessly.
 - **Cross-Platform Compatibility**: Automatically normalizes syntax differences between ODK, SurveyCTO, and KoboToolbox (e.g. `begin_group` vs `begin group`, `end_group` vs `end group`, `begin_repeat` vs `begin repeat`, `select_one_from_file`, `select_multiple_from_file`, `or_other`, and platform-specific metadata).
-- **Platform Metadata Descriptions**: Automatically tags and explains platform-specific metadata variables (such as `start`, `end`, `today`, `deviceid`, `phonenumber`, `simserial`, `subscriberid`, `username`, `email`, `audit`, `text-audit`, `start-geopoint`, `caseid`, `caseread`, `casesave`) in the Question column with human-readable descriptions (e.g. `[ODK / SurveyCTO / KoboToolbox Metadata]: Automated timestamp recorded when the survey session starts`).
-- **Categorized Calculation & Formula Presentation**: Classifies and explains platform-specific calculation functions in the Question column, categorizing formulas such as `pulldata()` (External Dataset Query), `jr:choice-name()` (Choice Label Lookup), `once(now())` (Timestamp Capture), `format-date-time()` (Date/Time Formatter), `decimal-date-time()` (Duration Math), `selected-at()` / `count-selected()` (Multi-Select Processing), `substr()` / `concat()` (String Processing), and `if()` (Conditional Logic).
-- **Automated Multi-Language Processing**: Automatically scans column headers for language tags (`label::English (en)`, `label::Hindi (hi)`, `label::Spanish`, etc.) as well as un-tagged `label` columns. If multiple languages are present, codebooks are generated for all detected languages automatically (e.g. `Survey_English.html`, `Survey_Hindi.html`, `Survey_English.pdf`, `Survey_Hindi.pdf`).
-- **Populated Choice Tables**: Parses the `choices` sheet safely using zero-index-aware header resolution (`get_header_index()`) and renders clean nested tables in the Answer column mapping choice values (`name`) to choice labels for each target language.
-- **Responsive & Print-Optimized CSS**: Features dark section headers (`#1a1a1a`) for form groups, exact print color retention (`-webkit-print-color-adjust: exact`), Devanagari font fallback (`Arial Unicode MS`), page-break protection (`page-break-inside: avoid`), and landscape A4 Playwright PDF rendering.
+- **Balanced Table Layout**: Enforces `table-layout: fixed; width: 100%` with balanced column proportions: **Field (22%)**, **Question (50%)**, and **Answer (28%)**. Uses `overflow-wrap: break-word` so variable names like `start-geopoint` or `phone_number` wrap naturally without single-character splits.
+- **Eco-Friendly Print Styling**: Replaced solid black background bars with light-tinted headers (`#f0f4f8` with 1.5pt solid top/bottom borders for section headers and `#e9ecef` for table headers) in `@media print`. This saves up to **80% printer ink/toner** while preserving clear visual hierarchy.
+- **Calculation Trimming & Height Reduction**: Complex formulas (such as `indexed-repeat()` or long `if()` conditions) are trimmed to 65 characters with an ellipsis (`...`) to prevent rows from expanding 5-6 lines vertically. Full formulas are preserved in HTML `title` tooltip attributes alongside categorized title badges and human-readable descriptions.
+- **Choice Table Sizing & Overflow Protection**: Renders nested choice tables in the Answer column using a 2-column fixed layout (32px option code + auto-flex label with word wrapping). Removes layout clipping so long choice labels (e.g. respondent names or multi-line options) never extend past the right page margin.
+- **Enhanced Typography & Readability**: Boosted print typography to `9.5pt` base font (`13.5pt` line height) and screen font to `14px` (`13.5px` cell font) for optimal legibility across desktop screens, tablets, and printed paper.
+- **Automated Multi-Language Processing**: Automatically scans column headers for language tags (`label::English (en)`, `label::Odia (or)`, `label::Hindi (hi)`, etc.) as well as un-tagged `label` columns. Generates distinct codebook files for all detected languages automatically (e.g. `Survey_English.html`, `Survey_Odia.html`, `Survey_English.pdf`, `Survey_Odia.pdf`).
+- **Platform Metadata Descriptions**: Automatically tags and explains platform-specific metadata variables (`start`, `end`, `today`, `deviceid`, `phonenumber`, `simserial`, `subscriberid`, `username`, `email`, `audit`, `text-audit`, `start-geopoint`, `caseid`, `caseread`, `casesave`) in the Question column with human-readable explanations.
 
 ## Supported Platform Metadata Reference
 
@@ -50,14 +53,13 @@ The core objective of this project is to provide a direct Python pipeline (`xlsf
 ## Repository Structure
 
 - `xlsform_to_printable.py` — Primary standalone script to directly parse XLSForm `.xlsx` files and output responsive HTML and A4 PDF codebooks across languages and platforms.
-- `html_make_responsive.py` — Existing script that processes SurveyCTO-exported HTML codebooks, applies responsive and print CSS, and generates A4 landscape PDFs using Playwright Chromium.
-- `html_make_responsive_print.py` — Alternative script that converts SurveyCTO HTML tables into a card-style `.question-item` layout for portrait A4 printing.
+- `html_make_responsive.py` — Post-processing script that formats existing HTML codebooks, applies responsive/print styles, and renders landscape A4 PDFs using Playwright Chromium.
+- `html_make_responsive_print.py` — Alternative script that converts SurveyCTO HTML tables into a card-style layout for portrait A4 printing.
 - `backup_html_make_responsive.py` — Frozen reference backup of the HTML responsive transformation script.
-- `xlsform_to_printable_plan.md` — Detailed technical architecture, XLSForm element mapping, and implementation roadmap for the direct XLSForm parser.
-- `PA_KAP_Endline_CR_Programme_UP_Bihar.xlsx` — Sample XLSForm spreadsheet for the KAP Endline survey.
-- `PA_Panel_Diary_CR_Programme_UP_Bihar.xlsx` — Sample XLSForm spreadsheet for the Panel Diary survey.
-- `*_English.html` / `*_Hindi.html` — Sample generated codebooks for English and Hindi form variations.
-- `*_English.pdf` / `*_Hindi.pdf` — Sample generated A4 landscape codebook PDFs.
+- `xlsform_to_printable_plan.md` — Detailed technical architecture, XLSForm element mapping, and implementation roadmap.
+- `Brick Kiln Literacy RCT - Household Survey.xlsx` — Sample XLSForm spreadsheet containing multi-language (English and Odia) survey definitions.
+- `*_English.html` / `*_Odia.html` — Sample generated codebooks for English and Odia form variations.
+- `*_English.pdf` / `*_Odia.pdf` — Sample generated eco-friendly A4 landscape codebook PDFs.
 
 ## Prerequisites and Setup
 
@@ -73,14 +75,14 @@ The core objective of this project is to provide a direct Python pipeline (`xlsf
 
 ## Usage Instructions
 
-### Direct XLSForm Processing (New Workflow)
+### Direct XLSForm Processing (Recommended Workflow)
 Run `xlsform_to_printable.py` directly against XLSForm Excel files to generate HTML and PDF codebooks for all detected languages:
 ```bash
-python xlsform_to_printable.py --input PA_KAP_Endline_CR_Programme_UP_Bihar.xlsx
+python xlsform_to_printable.py --input "Brick Kiln Literacy RCT - Household Survey.xlsx"
 ```
 To target a specific language explicitly:
 ```bash
-python xlsform_to_printable.py --input PA_KAP_Endline_CR_Programme_UP_Bihar.xlsx --lang English
+python xlsform_to_printable.py --input "Brick Kiln Literacy RCT - Household Survey.xlsx" --lang English
 ```
 To process an entire directory of XLSForm files:
 ```bash
@@ -88,28 +90,22 @@ python xlsform_to_printable.py --dir /path/to/forms/
 ```
 To generate HTML codebooks only without rendering PDFs:
 ```bash
-python xlsform_to_printable.py --input PA_KAP_Endline_CR_Programme_UP_Bihar.xlsx --no-pdf
+python xlsform_to_printable.py --input "Brick Kiln Literacy RCT - Household Survey.xlsx" --no-pdf
 ```
 
-### Legacy HTML Post-Processing Workflow
-To format existing SurveyCTO HTML exports and render landscape A4 PDFs:
+### Post-Processing Existing HTML Files
+To process an existing HTML codebook export and generate landscape A4 PDFs:
 ```bash
-python html_make_responsive.py
-```
-To transform existing HTML exports into portrait card layouts:
-```bash
-python html_make_responsive_print.py
+python html_make_responsive.py --input codebook.html
 ```
 
-## Key Technical Specifications & Styling Rules
+## Technical Specifications & Print Optimization
 
-- **Encoding & Typography**: All files are read and written using `utf-8` encoding. The primary font stack begins with `"Arial Unicode MS"` followed by Arial to ensure seamless rendering of Devanagari (Hindi) script and international characters.
-- **Section Headers**: Form groups (`begin group` / `begin_group`) are styled as full-width section headers with dark background `#1a1a1a` and white text, configured with `-webkit-print-color-adjust: exact` for background retention during printing.
-- **Choice Lists**: Single-choice (`select_one`) and multiple-choice (`select_multiple`) questions display option values and labels in clean nested choice tables inside the Answer column.
-- **Platform Metadata**: Automatically tagged in Question column with gray left-bordered containers (`.metadata-tag`).
-- **Calculation Display**: Calculation fields display their categorized formula and explanation in blue left-bordered containers (`.calculation`) inside the Question column.
-- **Form Metadata & Logic**: Field names, required indicators (`(required)`), hints (styled in blue), relevance expressions (styled in green italic), and constraints are parsed and rendered preserving field visibility rules.
-- **Print Optimization**: Configured with `@media print` rules, `page-break-inside: avoid` on question rows, and exact color preservation for A4 landscape and portrait printing.
+- **Page & Margin Setup**: `@page { size: A4 landscape; margin: 8mm 10mm; }` for compact, high-density codebook layout.
+- **Repeating Headers**: `thead { display: table-header-group; }` automatically repeats table column headers (`Field`, `Question`, `Answer`) at the top of every page break.
+- **Typography & Encoding**: All files use UTF-8 encoding. Uses `"Arial Unicode MS", Arial, sans-serif` to ensure complete rendering of Odia, Devanagari (Hindi), Tamil, Bengali, and other international scripts.
+- **Ink & Toner Savings**: Solid black header fills (`#1a1a1a`) are automatically replaced during printing with light gray tint headers (`#f0f4f8` / `#e9ecef`) and crisp dark text, preventing heavy ink saturation while maintaining clear visual distinction.
+- **Word Wrapping**: Enforces `overflow-wrap: break-word; word-break: break-word;` across all table cells to eliminate horizontal clipping and text overflow across page boundaries.
 
 ## Markdown Guidelines for Contributor Documentation
 

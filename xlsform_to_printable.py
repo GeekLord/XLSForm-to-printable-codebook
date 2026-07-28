@@ -31,14 +31,14 @@ body {
     width: 100%;
     max-width: 1200px;
     margin: auto;
-    padding: 0 15px;
+    padding: 0 10px;
 }
 
 h4 {
     text-align: center;
-    font-size: 18px;
-    margin: 15px 0;
-    padding-bottom: 10px;
+    font-size: 19px;
+    margin: 12px 0;
+    padding-bottom: 8px;
     border-bottom: 2px solid #333;
 }
 
@@ -46,18 +46,21 @@ table {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 20px;
+    table-layout: fixed;
 }
 
 th, td {
-    padding: 8px;
+    padding: 7px 9px;
     text-align: left;
     border: 1px solid #ddd;
     vertical-align: top;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 td[colspan="3"],
 .section-header-dark {
-    background: #1a1a1a !important;
+    background: #2b2d42 !important;
     color: #fff !important;
     font-weight: bold;
     -webkit-print-color-adjust: exact !important;
@@ -65,21 +68,24 @@ td[colspan="3"],
 }
 
 .headerCell {
-    background: #707070;
+    background: #4a4e69;
     color: #fff;
 }
 
 .headerCell h6 {
     margin: 0;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: bold;
+    color: #fff;
 }
 
 .fieldCell {
     font-weight: bold;
-    color: #333;
-    width: 20%;
+    color: #222;
+    width: 22%;
+    font-size: 13.5px;
     white-space: normal;
+    overflow-wrap: break-word;
     word-break: break-word;
 }
 
@@ -89,11 +95,17 @@ td[colspan="3"],
 }
 
 .questionCell {
-    width: 60%;
+    width: 50%;
+    font-size: 13.5px;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .answerCell {
-    width: 20%;
+    width: 28%;
+    font-size: 13px;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 tr.gray td {
@@ -102,23 +114,28 @@ tr.gray td {
 
 td .table {
     margin: 0;
-    font-size: 13px;
+    font-size: 12.5px;
+    width: 100%;
+    table-layout: fixed;
 }
 
 td .table td {
-    padding: 4px;
+    padding: 2px 4px;
     border: none;
     border-bottom: 1px dotted #ccc;
+    vertical-align: top;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .response-note-cell {
-    width: 10px;
+    display: none;
 }
 
 @media screen and (max-width: 768px) {
     body {
-        font-size: 14px;
-        line-height: 22px;
+        font-size: 13px;
+        line-height: 18px;
         padding: 5px;
     }
     
@@ -136,18 +153,18 @@ td .table td {
     }
     
     th, td {
-        padding: 6px;
+        padding: 5px;
     }
     
     .headerCell h6 {
-        font-size: 11px;
+        font-size: 12px;
     }
 }
 
 @media screen and (max-width: 480px) {
     body {
-        font-size: 13px;
-        line-height: 20px;
+        font-size: 12px;
+        line-height: 16px;
         padding: 5px;
     }
     
@@ -157,41 +174,40 @@ td .table td {
     
     th, td {
         padding: 4px;
-        font-size: 12px;
-    }
-    
-    .fieldCell {
-        width: 25%;
-    }
-    
-    .questionCell {
-        width: 50%;
-    }
-    
-    .answerCell {
-        width: 25%;
+        font-size: 11.5px;
     }
 }
 
 @media print {
-    @page { size: A4 landscape; margin: 10mm; }
-    @page :first { margin-top: 8mm; }
+    @page { 
+        size: A4 landscape; 
+        margin: 8mm 10mm 8mm 10mm; 
+    }
+    @page :first { 
+        margin-top: 8mm; 
+    }
     
     body {
-        font-size: 9pt;
-        line-height: 14pt;
+        font-size: 9.5pt;
+        line-height: 13.5pt;
         padding: 0;
         background: #fff;
     }
     
     h4 {
         font-size: 14pt;
-        margin: 10px 0;
-        border-bottom: 1pt solid #333;
+        margin: 6px 0;
+        border-bottom: 1.5pt solid #333;
     }
     
     table {
         page-break-inside: auto;
+        table-layout: fixed;
+        width: 100%;
+    }
+    
+    thead {
+        display: table-header-group;
     }
     
     tr {
@@ -201,19 +217,30 @@ td .table td {
     th, td {
         padding: 4pt 6pt;
         border: 0.5pt solid #999;
+        overflow-wrap: break-word;
+        word-break: break-word;
     }
     
     .headerCell {
-        background: #1a1a1a !important;
-        color: #fff !important;
+        background: #e9ecef !important;
+        color: #000 !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
     
+    .headerCell h6 {
+        color: #000 !important;
+        font-size: 10pt;
+    }
+    
     td[colspan="3"],
     .section-header-dark {
-        background: #1a1a1a !important;
-        color: #fff !important;
+        background: #f0f4f8 !important;
+        color: #000 !important;
+        font-weight: bold;
+        font-size: 10.5pt;
+        border-top: 1.5pt solid #333 !important;
+        border-bottom: 1.5pt solid #333 !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
     }
@@ -226,16 +253,16 @@ td .table td {
 }
 
 img.questionPrompt { 
-    max-width: 580px; 
-    padding: 3px; 
+    max-width: 100%; 
+    padding: 2px; 
     border: 1px solid #ddd; 
     display: block; 
-    margin: 5px 0; 
+    margin: 4px 0; 
 }
 
 img.choicePrompt { 
-    max-width: 130px; 
-    padding: 3px; 
+    max-width: 120px; 
+    padding: 2px; 
     border: 1px solid #ddd; 
 }
 
@@ -245,42 +272,42 @@ img.choicePrompt {
 }
 
 .relevance {
-    font-size: 12px;
+    font-size: 11.5px;
     font-style: italic;
-    color: green;
+    color: #2b7013;
 }
 
 .hint {
-    color: blue;
-    font-size: 13px;
+    color: #1864ab;
+    font-size: 11.5px;
 }
 
 .metadata-tag {
-    font-size: 12px;
+    font-size: 11.5px;
     color: #495057;
-    background: #e9ecef;
+    background: #f1f3f5;
     border-left: 3px solid #6c757d;
-    padding: 3px 6px;
-    margin-top: 4px;
+    padding: 2px 6px;
+    margin-top: 3px;
     border-radius: 2px;
 }
 
 .calculation {
-    font-size: 12px;
+    font-size: 11.5px;
     color: #004085;
-    background: #cce5ff;
-    border-left: 3px solid #0056b3;
-    padding: 4px 8px;
-    margin-top: 4px;
+    background: #e7f5ff;
+    border-left: 3px solid #1864ab;
+    padding: 3px 6px;
+    margin-top: 3px;
     word-break: break-all;
     border-radius: 2px;
 }
 
 .calc-desc {
-    font-size: 11px;
+    font-size: 10.5px;
     font-style: italic;
     color: #495057;
-    margin-top: 2px;
+    margin-top: 1px;
 }
 """
 
@@ -604,7 +631,7 @@ def build_codebook_html(parser, language='Default'):
     tr_head = soup.new_tag('tr')
     thead.append(tr_head)
 
-    cols = [('20%', 'Field'), ('60%', 'Question'), ('20%', 'Answer')]
+    cols = [('22%', 'Field'), ('50%', 'Question'), ('28%', 'Answer')]
     for width, label in cols:
         th = soup.new_tag('th', attrs={'class': 'headerCell', 'style': f'width: {width};'})
         h6 = soup.new_tag('h6')
@@ -671,7 +698,20 @@ def build_codebook_html(parser, language='Default'):
         if item['calculation'] or base_type == 'calculate':
             cat_title, cat_desc = classify_calculation(item['calculation'])
             div_calc = soup.new_tag('div', attrs={'class': 'calculation'})
-            div_calc.append(BeautifulSoup(f"<b>{cat_title}</b>: <code>{item['calculation']}</code>", 'html.parser'))
+            
+            raw_calc = item['calculation']
+            max_len = 65
+            if len(raw_calc) > max_len:
+                trimmed_calc = raw_calc[:max_len].rstrip() + '...'
+            else:
+                trimmed_calc = raw_calc
+                
+            calc_html = f"<b>{cat_title}</b>"
+            if trimmed_calc:
+                safe_raw = raw_calc.replace('&', '&amp;').replace('"', '&quot;')
+                calc_html += f": <code title=\"{safe_raw}\">{trimmed_calc}</code>"
+                
+            div_calc.append(BeautifulSoup(calc_html, 'html.parser'))
             if cat_desc:
                 div_desc = soup.new_tag('div', attrs={'class': 'calc-desc'})
                 div_desc.string = cat_desc
@@ -697,22 +737,20 @@ def build_codebook_html(parser, language='Default'):
         if base_type.startswith(('select_one', 'select_multiple', 'select_or_other')) and list_name:
             choice_list = get_choice_list_by_name(parser.choices, list_name)
             if choice_list:
-                c_table = soup.new_tag('table', attrs={'class': 'table borderless'})
+                c_table = soup.new_tag('table', attrs={'class': 'table borderless', 'style': 'width: 100%; table-layout: fixed; margin: 0;'})
                 c_tbody = soup.new_tag('tbody')
                 c_table.append(c_tbody)
 
                 for choice in choice_list:
                     c_tr = soup.new_tag('tr')
-                    c_td_note = soup.new_tag('td', attrs={'class': 'response-note-cell'})
-                    c_td_val = soup.new_tag('td', attrs={'style': 'text-align: center; padding-left: 3px; padding-right: 3px;'})
+                    c_td_val = soup.new_tag('td', attrs={'style': 'width: 32px; min-width: 32px; font-weight: bold; text-align: center; vertical-align: top; padding: 2px 4px 2px 0;'})
                     c_td_val.string = choice['name']
                     
-                    c_td_lbl = soup.new_tag('td', attrs={'style': 'width: 100%; padding-left: 3px; padding-right: 3px; border-left: 1px solid #999;'})
+                    c_td_lbl = soup.new_tag('td', attrs={'style': 'vertical-align: top; padding: 2px 0 2px 5px; border-left: 1px solid #ddd; overflow-wrap: break-word; word-break: break-word;'})
                     c_span = soup.new_tag('span')
                     c_span.string = get_lang_value(choice['labels'], language) or choice['name']
                     c_td_lbl.append(c_span)
 
-                    c_tr.append(c_td_note)
                     c_tr.append(c_td_val)
                     c_tr.append(c_td_lbl)
                     c_tbody.append(c_tr)
