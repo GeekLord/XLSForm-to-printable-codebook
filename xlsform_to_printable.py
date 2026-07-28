@@ -254,6 +254,17 @@ img.choicePrompt {
     color: blue;
     font-size: 13px;
 }
+
+.calculation {
+    font-size: 12px;
+    font-style: italic;
+    color: #333;
+    background: #f4f6f8;
+    border-left: 3px solid #0056b3;
+    padding: 3px 6px;
+    margin-top: 4px;
+    word-break: break-all;
+}
 """
 
 def extract_language_name(header_str):
@@ -270,6 +281,30 @@ def clean_language_suffix(lang_name):
     if match:
         return match.group(1).strip()
     return lang_name.strip()
+
+def get_header_index(header_map, *keys):
+    """Safely return column index for any matching key, avoiding 0-evaluating-as-falsy bug."""
+    for key in keys:
+        if key in header_map:
+            return header_map[key]
+    return None
+
+def get_lang_value(dict_of_langs, target_lang):
+    """Retrieve language string with clean fallback handling."""
+    if not dict_of_langs:
+        return ''
+    if target_lang in dict_of_langs and dict_of_langs[target_lang]:
+        return dict_of_langs[target_lang]
+    clean_target = clean_language_suffix(target_lang).lower()
+    for key, val in dict_of_langs.items():
+        if val and clean_target in key.lower():
+            return val
+    if 'Default' in dict_of_langs and dict_of_langs['Default']:
+        return dict_of_langs['Default']
+    for val in dict_of_langs.values():
+        if val:
+            return val
+    return ''
 
 class XLSFormParser:
     def __init__(self, excel_path):
@@ -327,8 +362,8 @@ class XLSFormParser:
         headers = [str(cell.value or '').strip() for cell in sheet[1]]
         header_map = {h: i for i, h in enumerate(headers) if h}
 
-        list_name_col = header_map.get('list_name') or header_map.get('list name')
-        name_col = header_map.get('name') or header_map.get('value')
+        list_name_col = get_header_index(header_map, 'list_name', 'list name')
+        name_col = get_header_index(header_map, 'name', 'value')
 
         if list_name_col is None or name_col is None:
             return choices
@@ -346,16 +381,14 @@ class XLSFormParser:
 
             labels = {}
             for lang in self.languages:
-                label_header = f'label::{lang}' if lang != 'Default' else 'label'
-                col_idx = header_map.get(label_header)
+                col_idx = get_header_index(header_map, f'label::{lang}', 'label')
                 if col_idx is None and lang != 'Default':
-                    # Fallback matching e.g. label::English
                     for h, idx in header_map.items():
                         if h.startswith('label::') and lang.lower() in h.lower():
                             col_idx = idx
                             break
-                if col_idx is None and 'label' in header_map:
-                    col_idx = header_map['label']
+                if col_idx is None:
+                    col_idx = get_header_index(header_map, 'label')
 
                 if col_idx is not None and col_idx < len(row_cells):
                     val = row_cells[col_idx].value
@@ -379,8 +412,8 @@ class XLSFormParser:
         headers = [str(cell.value or '').strip() for cell in sheet[1]]
         header_map = {h: i for i, h in enumerate(headers) if h}
 
-        type_col = header_map.get('type')
-        name_col = header_map.get('name')
+        type_col = get_header_index(header_map, 'type')
+        name_col = get_header_index(header_map, 'name')
         if type_col is None:
             return survey_rows
 
@@ -394,60 +427,57 @@ class XLSFormParser:
             if name_col is not None and name_col < len(row_cells):
                 name_val = str(row_cells[name_col].value or '').strip()
 
-            # Required field checking across platform variants
-            req_col = header_map.get('required')
+            req_col = get_header_index(header_map, 'required')
             is_required = False
             if req_col is not None and req_col < len(row_cells):
                 req_val = str(row_cells[req_col].value or '').strip().lower()
                 is_required = req_val in ['yes', '1', 'true', 'ok', 'required']
 
-            # Extract labels, hints, and constraint messages per language
             labels = {}
             hints = {}
             constraint_msgs = {}
 
             for lang in self.languages:
                 # Label
-                col_idx = header_map.get(f'label::{lang}') if lang != 'Default' else header_map.get('label')
+                col_idx = get_header_index(header_map, f'label::{lang}')
                 if col_idx is None and lang != 'Default':
                     for h, idx in header_map.items():
                         if h.startswith('label::') and lang.lower() in h.lower():
                             col_idx = idx
                             break
                 if col_idx is None:
-                    col_idx = header_map.get('label')
+                    col_idx = get_header_index(header_map, 'label')
                 labels[lang] = str(row_cells[col_idx].value or '').strip() if (col_idx is not None and col_idx < len(row_cells) and row_cells[col_idx].value is not None) else ''
 
                 # Hint
-                col_idx = header_map.get(f'hint::{lang}') if lang != 'Default' else header_map.get('hint')
+                col_idx = get_header_index(header_map, f'hint::{lang}')
                 if col_idx is None and lang != 'Default':
                     for h, idx in header_map.items():
                         if h.startswith('hint::') and lang.lower() in h.lower():
                             col_idx = idx
                             break
                 if col_idx is None:
-                    col_idx = header_map.get('hint')
+                    col_idx = get_header_index(header_map, 'hint')
                 hints[lang] = str(row_cells[col_idx].value or '').strip() if (col_idx is not None and col_idx < len(row_cells) and row_cells[col_idx].value is not None) else ''
 
                 # Constraint message
-                col_idx = header_map.get(f'constraint_message::{lang}') if lang != 'Default' else header_map.get('constraint_message')
+                col_idx = get_header_index(header_map, f'constraint_message::{lang}')
                 if col_idx is None and lang != 'Default':
                     for h, idx in header_map.items():
                         if h.startswith('constraint_message::') and lang.lower() in h.lower():
                             col_idx = idx
                             break
                 if col_idx is None:
-                    col_idx = header_map.get('constraint_message')
+                    col_idx = get_header_index(header_map, 'constraint_message')
                 constraint_msgs[lang] = str(row_cells[col_idx].value or '').strip() if (col_idx is not None and col_idx < len(row_cells) and row_cells[col_idx].value is not None) else ''
 
-            # Logic attributes
-            rel_col = header_map.get('relevant') or header_map.get('relevance')
+            rel_col = get_header_index(header_map, 'relevant', 'relevance')
             relevance = str(row_cells[rel_col].value or '').strip() if (rel_col is not None and rel_col < len(row_cells) and row_cells[rel_col].value is not None) else ''
 
-            con_col = header_map.get('constraint')
+            con_col = get_header_index(header_map, 'constraint')
             constraint = str(row_cells[con_col].value or '').strip() if (con_col is not None and con_col < len(row_cells) and row_cells[con_col].value is not None) else ''
 
-            calc_col = header_map.get('calculation') or header_map.get('calculate')
+            calc_col = get_header_index(header_map, 'calculation', 'calculate')
             calculation = str(row_cells[calc_col].value or '').strip() if (calc_col is not None and calc_col < len(row_cells) and row_cells[calc_col].value is not None) else ''
 
             survey_rows.append({
@@ -463,6 +493,17 @@ class XLSFormParser:
             })
 
         return survey_rows
+
+def get_choice_list_by_name(choices_dict, list_name):
+    """Flexible lookup for choice list matching name case-insensitively."""
+    if not list_name or not choices_dict:
+        return []
+    if list_name in choices_dict:
+        return choices_dict[list_name]
+    for key, items in choices_dict.items():
+        if key.strip().lower() == list_name.strip().lower():
+            return items
+    return []
 
 def build_codebook_html(parser, language='Default'):
     """Build responsive HTML codebook for a specific language."""
@@ -518,9 +559,9 @@ def build_codebook_html(parser, language='Default'):
         base_type = parts[0].lower()
         list_name = parts[1].strip() if len(parts) > 1 else ''
 
-        # Normalized section header check for ODK, SurveyCTO, KoboToolbox
+        # Section header check
         if base_type in ['begin_group', 'begin'] and raw_type.lower().startswith(('begin group', 'begin_group', 'begin repeat', 'begin_repeat')):
-            label = item['labels'].get(language) or item['labels'].get('Default') or item['name']
+            label = get_lang_value(item['labels'], language) or item['name']
             if not label and 'group' in raw_type.lower():
                 label = item['name']
             
@@ -552,11 +593,17 @@ def build_codebook_html(parser, language='Default'):
 
         # Column 2: Question Prompt & Details
         td_q = soup.new_tag('td', attrs={'class': 'questionCell'})
-        q_label = item['labels'].get(language) or item['labels'].get('Default') or ''
+        q_label = get_lang_value(item['labels'], language)
         if q_label:
             td_q.append(q_label)
 
-        q_hint = item['hints'].get(language) or item['hints'].get('Default') or ''
+        # Calculation Display: Show formula badge if calculation exists or for calculate-type variables
+        if item['calculation']:
+            div_calc = soup.new_tag('div', attrs={'class': 'calculation'})
+            div_calc.string = f"Calculation: {item['calculation']}"
+            td_q.append(div_calc)
+
+        q_hint = get_lang_value(item['hints'], language)
         if q_hint:
             div_hint = soup.new_tag('div', attrs={'class': 'hint'})
             div_hint.string = q_hint
@@ -572,8 +619,8 @@ def build_codebook_html(parser, language='Default'):
         # Column 3: Answer / Choice Table
         td_a = soup.new_tag('td', attrs={'class': 'answerCell'})
 
-        if base_type in ['select_one', 'select_multiple', 'select_one_or_other', 'select_multiple_or_other'] and list_name:
-            choice_list = parser.choices.get(list_name, [])
+        if base_type.startswith(('select_one', 'select_multiple', 'select_or_other')) and list_name:
+            choice_list = get_choice_list_by_name(parser.choices, list_name)
             if choice_list:
                 c_table = soup.new_tag('table', attrs={'class': 'table borderless'})
                 c_tbody = soup.new_tag('tbody')
@@ -587,7 +634,7 @@ def build_codebook_html(parser, language='Default'):
                     
                     c_td_lbl = soup.new_tag('td', attrs={'style': 'width: 100%; padding-left: 3px; padding-right: 3px; border-left: 1px solid #999;'})
                     c_span = soup.new_tag('span')
-                    c_span.string = choice['labels'].get(language) or choice['labels'].get('Default') or choice['name']
+                    c_span.string = get_lang_value(choice['labels'], language) or choice['name']
                     c_td_lbl.append(c_span)
 
                     c_tr.append(c_td_note)
@@ -660,7 +707,6 @@ def main():
     args = parser.parse_args()
 
     if not args.input and not args.dir:
-        # Default: process all .xlsx files in current directory
         cwd = os.getcwd()
         xlsx_files = [os.path.join(cwd, f) for f in os.listdir(cwd) if f.endswith('.xlsx') and not f.startswith('~$')]
         if not xlsx_files:
