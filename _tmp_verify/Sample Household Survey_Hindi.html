@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><title>Sample Household Survey</title><style>
+.spacer {
+    display: none !important;
+    width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    padding: 10px;
+    font-family: "Arial Unicode MS", "Arial Unicode", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 20px;
+    color: #000;
+    background: #fff;
+}
+
+.codebook-container {
+    width: 100%;
+    max-width: 1200px;
+    margin: auto;
+    padding: 0 10px;
+}
+
+h4 {
+    text-align: center;
+    font-size: 19px;
+    margin: 12px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #333;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+    table-layout: fixed;
+}
+
+th, td {
+    padding: 7px 9px;
+    text-align: left;
+    border: 1px solid #ddd;
+    vertical-align: top;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+td[colspan="3"],
+.section-header-dark {
+    background: #2b2d42 !important;
+    color: #fff !important;
+    font-weight: bold;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+}
+
+.headerCell {
+    background: #4a4e69;
+    color: #fff;
+}
+
+.headerCell h6 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: bold;
+    color: #fff;
+}
+
+.fieldCell {
+    font-weight: bold;
+    color: #222;
+    width: 22%;
+    font-size: 13.5px;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+.fieldCell .required {
+    color: #c00;
+    font-weight: normal;
+}
+
+.questionCell {
+    width: 50%;
+    font-size: 13.5px;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+.answerCell {
+    width: 28%;
+    font-size: 13px;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+tr.gray td {
+    background: #fff;
+}
+
+td .table {
+    margin: 0;
+    font-size: 12.5px;
+    width: 100%;
+    table-layout: fixed;
+}
+
+td .table td {
+    padding: 2px 4px;
+    border: none;
+    border-bottom: 1px dotted #ccc;
+    vertical-align: top;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+.response-note-cell {
+    display: none;
+}
+
+@media screen and (max-width: 768px) {
+    body {
+        font-size: 13px;
+        line-height: 18px;
+        padding: 5px;
+    }
+    
+    h4 {
+        font-size: 16px;
+    }
+    
+    .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    table {
+        min-width: 600px;
+    }
+    
+    th, td {
+        padding: 5px;
+    }
+    
+    .headerCell h6 {
+        font-size: 12px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    body {
+        font-size: 12px;
+        line-height: 16px;
+        padding: 5px;
+    }
+    
+    h4 {
+        font-size: 14px;
+    }
+    
+    th, td {
+        padding: 4px;
+        font-size: 11.5px;
+    }
+}
+
+@media print {
+    @page { 
+        size: A4 landscape; 
+        margin: 8mm 10mm 8mm 10mm; 
+    }
+    @page :first { 
+        margin-top: 8mm; 
+    }
+    
+    body {
+        font-size: 9.5pt;
+        line-height: 13.5pt;
+        padding: 0;
+        background: #fff;
+    }
+    
+    h4 {
+        font-size: 14pt;
+        margin: 6px 0;
+        border-bottom: 1.5pt solid #333;
+    }
+    
+    table {
+        page-break-inside: auto;
+        table-layout: fixed;
+        width: 100%;
+    }
+    
+    thead {
+        display: table-header-group;
+    }
+    
+    tr {
+        page-break-inside: avoid;
+    }
+    
+    th, td {
+        padding: 4pt 6pt;
+        border: 0.5pt solid #999;
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+    
+    .headerCell {
+        background: #e9ecef !important;
+        color: #000 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    
+    .headerCell h6 {
+        color: #000 !important;
+        font-size: 10pt;
+    }
+    
+    td[colspan="3"],
+    .section-header-dark {
+        background: #f0f4f8 !important;
+        color: #000 !important;
+        font-weight: bold;
+        font-size: 10.5pt;
+        border-top: 1.5pt solid #333 !important;
+        border-bottom: 1.5pt solid #333 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    
+    tr.gray td {
+        background: #fff !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}
+
+img.questionPrompt { 
+    max-width: 100%; 
+    padding: 2px; 
+    border: 1px solid #ddd; 
+    display: block; 
+    margin: 4px 0; 
+}
+
+img.choicePrompt { 
+    max-width: 120px; 
+    padding: 2px; 
+    border: 1px solid #ddd; 
+}
+
+.required { 
+    color: red; 
+    font-style: italic; 
+}
+
+.relevance {
+    font-size: 11.5px;
+    font-style: italic;
+    color: #2b7013;
+}
+
+.hint {
+    color: #1864ab;
+    font-size: 11.5px;
+}
+
+.metadata-tag {
+    font-size: 11.5px;
+    color: #495057;
+    background: #f1f3f5;
+    border-left: 3px solid #6c757d;
+    padding: 2px 6px;
+    margin-top: 3px;
+    border-radius: 2px;
+}
+
+.calculation {
+    font-size: 11.5px;
+    color: #004085;
+    background: #e7f5ff;
+    border-left: 3px solid #1864ab;
+    padding: 3px 6px;
+    margin-top: 3px;
+    word-break: break-all;
+    border-radius: 2px;
+}
+
+.calc-desc {
+    font-size: 10.5px;
+    font-style: italic;
+    color: #495057;
+    margin-top: 1px;
+}
+</style></head><body><div class="codebook-container"><h4>Sample Household Survey</h4><div class="table-responsive"><table class="table table-bordered table-condensed"><thead><tr><th class="headerCell" style="width: 22%;"><h6>Field</h6></th><th class="headerCell" style="width: 50%;"><h6>Question</h6></th><th class="headerCell" style="width: 28%;"><h6>Answer</h6></th></tr></thead><tbody><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>starttime</span></td><td class="questionCell"><div class="metadata-tag"><b>[ODK / SurveyCTO / KoboToolbox Metadata]</b>: Automated timestamp recorded when the survey session starts.</div></td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>endtime</span></td><td class="questionCell"><div class="metadata-tag"><b>[ODK / SurveyCTO / KoboToolbox Metadata]</b>: Automated timestamp recorded when the survey session ends.</div></td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>today</span></td><td class="questionCell"><div class="metadata-tag"><b>[ODK / SurveyCTO / KoboToolbox Metadata]</b>: Current date recorded when the survey is conducted.</div></td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>deviceid</span></td><td class="questionCell"><div class="metadata-tag"><b>[ODK / SurveyCTO / KoboToolbox Metadata]</b>: Unique hardware identifier (IMEI/UUID) of the collection device.</div></td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>username</span></td><td class="questionCell"><div class="metadata-tag"><b>[ODK / KoboToolbox / SurveyCTO Metadata]</b>: Username of the logged-in field enumerator.</div></td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>audit</span></td><td class="questionCell"><div class="metadata-tag"><b>[ODK / SurveyCTO / KoboToolbox Metadata]</b>: User activity audit log file tracking timestamped interaction events.</div></td><td class="answerCell"></td></tr><tr class="entryRow"><td class="section-header-dark" colspan="3" style="padding-left: 5px;"><span>क. परिवार की पहचान</span></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>hh_name_pre</span></td><td class="questionCell"><div class="calculation"><b>Calculation (SurveyCTO / ODK External Dataset Query)</b>: <code title="pulldata('household_list', 'hh_head_name', 'hh_id', ${hh_id})">pulldata('household_list', 'hh_head_name', 'hh_id', ${hh_id})</code><div class="calc-desc">Queries pre-loaded CSV dataset or server case data using unique lookup key.</div></div></td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>survey_started</span></td><td class="questionCell"><div class="calculation"><b>Calculation (Timestamp Capture)</b>: <code title="once(now())">once(now())</code><div class="calc-desc">Captures current date/time upon evaluation.</div></div></td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>district_label</span></td><td class="questionCell"><div class="calculation"><b>Calculation (ODK / SurveyCTO Choice Label Lookup)</b>: <code title="jr:choice-name(${district}, '${district}')">jr:choice-name(${district}, '${district}')</code><div class="calc-desc">Resolves raw choice option code into human-readable label text.</div></div></td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>interview_minutes</span></td><td class="questionCell"><div class="calculation"><b>Calculation (Duration / Datetime Math)</b>: <code title="if(${endtime} != '', (decimal-date-time(${endtime}) - decimal-date-time(${starttime})) * 1440, 0)">if(${endtime} != '', (decimal-date-time(${endtime}) - decimal-dat...</code><div class="calc-desc">Converts datetime to decimal days for duration math.</div></div></td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>hh_id<span class="required"> (required)</span></span></td><td class="questionCell">परिवार आईडी<div class="hint">सूची पत्रक से लिखें</div></td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>district<span class="required"> (required)</span></span></td><td class="questionCell">निवास का जिला<div class="hint">विकल्प पढ़कर सुनाएँ</div></td><td class="answerCell"><table class="table borderless" style="width: 100%; table-layout: fixed; margin: 0;"><tbody><tr><td style="width: 32px; min-width: 32px; font-weight: bold; text-align: center; vertical-align: top; padding: 2px 4px 2px 0;">1</td><td style="vertical-align: top; padding: 2px 0 2px 5px; border-left: 1px solid #ddd; overflow-wrap: break-word; word-break: break-word;"><span>खोरधा</span></td></tr><tr><td style="width: 32px; min-width: 32px; font-weight: bold; text-align: center; vertical-align: top; padding: 2px 4px 2px 0;">2</td><td style="vertical-align: top; padding: 2px 0 2px 5px; border-left: 1px solid #ddd; overflow-wrap: break-word; word-break: break-word;"><span>कटक</span></td></tr><tr><td style="width: 32px; min-width: 32px; font-weight: bold; text-align: center; vertical-align: top; padding: 2px 4px 2px 0;">3</td><td style="vertical-align: top; padding: 2px 0 2px 5px; border-left: 1px solid #ddd; overflow-wrap: break-word; word-break: break-word;"><span>बालासोर</span></td></tr></tbody></table></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>assets</span></td><td class="questionCell">इनमें से कौन-कौन सी संपत्तियाँ परिवार के पास हैं?<div class="hint">सभी लागू विकल्प चुनें</div><div class="relevance">Relevance: ${hh_id} != ''</div></td><td class="answerCell"><table class="table borderless" style="width: 100%; table-layout: fixed; margin: 0;"><tbody><tr><td style="width: 32px; min-width: 32px; font-weight: bold; text-align: center; vertical-align: top; padding: 2px 4px 2px 0;">1</td><td style="vertical-align: top; padding: 2px 0 2px 5px; border-left: 1px solid #ddd; overflow-wrap: break-word; word-break: break-word;"><span>साइकिल</span></td></tr><tr><td style="width: 32px; min-width: 32px; font-weight: bold; text-align: center; vertical-align: top; padding: 2px 4px 2px 0;">2</td><td style="vertical-align: top; padding: 2px 0 2px 5px; border-left: 1px solid #ddd; overflow-wrap: break-word; word-break: break-word;"><span>इंटरनेट सुविधा वाला मोबाइल फोन</span></td></tr><tr><td style="width: 32px; min-width: 32px; font-weight: bold; text-align: center; vertical-align: top; padding: 2px 4px 2px 0;">3</td><td style="vertical-align: top; padding: 2px 0 2px 5px; border-left: 1px solid #ddd; overflow-wrap: break-word; word-break: break-word;"><span>रेफ्रिजरेटर</span></td></tr><tr><td style="width: 32px; min-width: 32px; font-weight: bold; text-align: center; vertical-align: top; padding: 2px 4px 2px 0;">96</td><td style="vertical-align: top; padding: 2px 0 2px 5px; border-left: 1px solid #ddd; overflow-wrap: break-word; word-break: break-word;"><span>इनमें से कोई नहीं</span></td></tr></tbody></table></td></tr><tr class="entryRow"><td class="section-header-dark" colspan="3" style="padding-left: 5px;"><span>ख. बाल सूची</span></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>child_name<span class="required"> (required)</span></span></td><td class="questionCell">बच्चे का नाम</td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>child_age<span class="required"> (required)</span></span></td><td class="questionCell">बच्चे की पूर्ण आयु (वर्ष)</td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>child_enrolled<span class="required"> (required)</span></span></td><td class="questionCell">क्या बच्चा वर्तमान में स्कूल में नामांकित है?<div class="relevance">Relevance: ${child_age} &gt;= 3</div></td><td class="answerCell"><table class="table borderless" style="width: 100%; table-layout: fixed; margin: 0;"><tbody><tr><td style="width: 32px; min-width: 32px; font-weight: bold; text-align: center; vertical-align: top; padding: 2px 4px 2px 0;">1</td><td style="vertical-align: top; padding: 2px 0 2px 5px; border-left: 1px solid #ddd; overflow-wrap: break-word; word-break: break-word;"><span>हाँ</span></td></tr><tr><td style="width: 32px; min-width: 32px; font-weight: bold; text-align: center; vertical-align: top; padding: 2px 4px 2px 0;">0</td><td style="vertical-align: top; padding: 2px 0 2px 5px; border-left: 1px solid #ddd; overflow-wrap: break-word; word-break: break-word;"><span>नहीं</span></td></tr></tbody></table></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>child_label</span></td><td class="questionCell"><div class="calculation"><b>Calculation (String Processing)</b>: <code title="concat(substr(${child_name}, 0, 12), ' - ', string-length(${child_name}))">concat(substr(${child_name}, 0, 12), ' - ', string-length(${child...</code><div class="calc-desc">Performs text manipulation, substring extraction, or string concatenation.</div></div></td><td class="answerCell"></td></tr><tr class="gray entryRow"><td class="fieldCell" style="padding-left: 5px;"><span>closing_note</span></td><td class="questionCell">उत्तरदाता को धन्यवाद दें और साक्षात्कार समाप्त करें।</td><td class="answerCell"></td></tr></tbody></table></div></div></body></html>

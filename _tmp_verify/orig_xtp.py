@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import re
 import argparse
@@ -6,17 +6,6 @@ import asyncio
 from bs4 import BeautifulSoup
 import openpyxl
 from playwright.async_api import async_playwright
-
-try:
-    from docx import Document
-    from docx.enum.section import WD_ORIENT
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
-    from docx.shared import Mm, Pt, RGBColor
-    DOCX_AVAILABLE = True
-except ImportError:
-    DOCX_AVAILABLE = False
 
 RESPONSIVE_STYLES = """
 .spacer {
@@ -367,38 +356,6 @@ def classify_calculation(formula_str):
     else:
         return 'Calculation', ''
 
-CALC_TRIM_LENGTH = 65
-
-SECTION_START_PREFIXES = ('begin group', 'begin_group', 'begin repeat', 'begin_repeat')
-SECTION_END_TYPES = ('end_group', 'end group', 'end_repeat', 'end repeat')
-
-
-def split_type(raw_type):
-    """Split an XLSForm type cell into its base type and trailing list name."""
-    parts = str(raw_type or '').strip().split(None, 1)
-    base_type = parts[0].lower() if parts else ''
-    list_name = parts[1].strip() if len(parts) > 1 else ''
-    return base_type, list_name
-
-
-def is_section_start(raw_type):
-    """True for group/repeat opening rows, which render as full-width section bands."""
-    return str(raw_type or '').strip().lower().startswith(SECTION_START_PREFIXES)
-
-
-def is_section_end(raw_type):
-    """True for group/repeat closing rows, which are dropped from the codebook."""
-    return str(raw_type or '').strip().lower() in SECTION_END_TYPES
-
-
-def trim_calculation(formula, max_len=CALC_TRIM_LENGTH):
-    """Shorten a formula for display so one long expression cannot stretch its row."""
-    formula = formula or ''
-    if len(formula) > max_len:
-        return formula[:max_len].rstrip() + '...'
-    return formula
-
-
 def extract_language_name(header_str):
     """Extract language identifier from column header string like 'label::English (en)' -> 'English (en)'."""
     if '::' in header_str:
@@ -687,10 +644,12 @@ def build_codebook_html(parser, language='Default'):
 
     for item in parser.survey_rows:
         raw_type = item['type'].strip()
-        base_type, list_name = split_type(raw_type)
+        parts = raw_type.split(None, 1)
+        base_type = parts[0].lower()
+        list_name = parts[1].strip() if len(parts) > 1 else ''
 
         # Section header check for group and repeat beginnings
-        if is_section_start(raw_type):
+        if raw_type.lower().startswith(('begin group', 'begin_group', 'begin repeat', 'begin_repeat')):
             label = get_lang_value(item['labels'], language) or item['name']
             if not label and 'group' in raw_type.lower():
                 label = item['name']
@@ -705,7 +664,7 @@ def build_codebook_html(parser, language='Default'):
             continue
 
         # Group closing tags check (end_group / end group / end_repeat / end repeat)
-        if is_section_end(raw_type):
+        if raw_type.lower() in ['end_group', 'end group', 'end_repeat', 'end repeat']:
             continue
 
         # Standard Field Row
@@ -741,8 +700,12 @@ def build_codebook_html(parser, language='Default'):
             div_calc = soup.new_tag('div', attrs={'class': 'calculation'})
             
             raw_calc = item['calculation']
-            trimmed_calc = trim_calculation(raw_calc)
-
+            max_len = 65
+            if len(raw_calc) > max_len:
+                trimmed_calc = raw_calc[:max_len].rstrip() + '...'
+            else:
+                trimmed_calc = raw_calc
+                
             calc_html = f"<b>{cat_title}</b>"
             if trimmed_calc:
                 safe_raw = raw_calc.replace('&', '&amp;').replace('"', '&quot;')
@@ -799,485 +762,6 @@ def build_codebook_html(parser, language='Default'):
 
     return str(soup)
 
-DOCX_FONT = 'Arial Unicode MS'
-DOCX_MONO_FONT = 'Consolas'
-
-DOCX_TITLE_PT = 14.0
-DOCX_HEADER_PT = 10.0
-DOCX_SECTION_PT = 10.5
-DOCX_BODY_PT = 9.5
-DOCX_SMALL_PT = 8.0
-DOCX_TINY_PT = 7.5
-
-DOCX_COLOR_TEXT = '000000'
-DOCX_COLOR_FIELD = '222222'
-DOCX_COLOR_REQUIRED = 'CC0000'
-DOCX_COLOR_HINT = '1864AB'
-DOCX_COLOR_RELEVANCE = '2B7013'
-DOCX_COLOR_META_TEXT = '495057'
-DOCX_COLOR_META_RULE = '6C757D'
-DOCX_COLOR_CALC_TEXT = '004085'
-DOCX_COLOR_CALC_RULE = '1864AB'
-
-DOCX_FILL_HEADER = 'E9ECEF'
-DOCX_FILL_SECTION = 'F0F4F8'
-DOCX_FILL_META = 'F1F3F5'
-DOCX_FILL_CALC = 'E7F5FF'
-
-DOCX_RULE_SECTION = '333333'
-DOCX_RULE_CELL = '999999'
-DOCX_RULE_CHOICE = 'CCCCCC'
-
-DOCX_PAGE_WIDTH_MM = 297.0
-DOCX_PAGE_HEIGHT_MM = 210.0
-DOCX_MARGIN_MM = 10.0
-DOCX_CONTENT_WIDTH_MM = DOCX_PAGE_WIDTH_MM - (2 * DOCX_MARGIN_MM)
-DOCX_COL_FRACTIONS = (0.22, 0.50, 0.28)
-
-
-# WordprocessingML validates property children by position, not just presence, so every
-# element written by hand below is inserted at its schema slot rather than appended.
-_DOCX_PPR_ORDER = (
-    'w:pStyle', 'w:keepNext', 'w:keepLines', 'w:pageBreakBefore', 'w:framePr', 'w:widowControl',
-    'w:numPr', 'w:suppressLineNumbers', 'w:pBdr', 'w:shd', 'w:tabs', 'w:suppressAutoHyphens',
-    'w:kinsoku', 'w:wordWrap', 'w:overflowPunct', 'w:topLinePunct', 'w:autoSpaceDE',
-    'w:autoSpaceDN', 'w:bidi', 'w:adjustRightInd', 'w:snapToGrid', 'w:spacing', 'w:ind',
-    'w:contextualSpacing', 'w:mirrorIndents', 'w:suppressOverlap', 'w:jc', 'w:textDirection',
-    'w:textAlignment', 'w:textboxTightWrap', 'w:outlineLvl', 'w:divId', 'w:cnfStyle', 'w:rPr',
-    'w:sectPr', 'w:pPrChange',
-)
-
-_DOCX_RPR_ORDER = (
-    'w:rStyle', 'w:rFonts', 'w:b', 'w:bCs', 'w:i', 'w:iCs', 'w:caps', 'w:smallCaps', 'w:strike',
-    'w:dstrike', 'w:outline', 'w:shadow', 'w:emboss', 'w:imprint', 'w:noProof', 'w:snapToGrid',
-    'w:vanish', 'w:webHidden', 'w:color', 'w:spacing', 'w:w', 'w:kern', 'w:position', 'w:sz',
-    'w:szCs', 'w:highlight', 'w:u', 'w:effect', 'w:bdr', 'w:shd', 'w:fitText', 'w:vertAlign',
-    'w:rtl', 'w:cs', 'w:em', 'w:lang', 'w:eastAsianLayout', 'w:specVanish', 'w:oMath',
-)
-
-_DOCX_TBLPR_ORDER = (
-    'w:tblStyle', 'w:tblpPr', 'w:tblOverlap', 'w:bidiVisual', 'w:tblStyleRowBandSize',
-    'w:tblStyleColBandSize', 'w:tblW', 'w:jc', 'w:tblCellSpacing', 'w:tblInd', 'w:tblBorders',
-    'w:shd', 'w:tblLayout', 'w:tblCellMar', 'w:tblLook', 'w:tblCaption', 'w:tblDescription',
-    'w:tblPrChange',
-)
-
-_DOCX_TCPR_ORDER = (
-    'w:cnfStyle', 'w:tcW', 'w:gridSpan', 'w:hMerge', 'w:vMerge', 'w:tcBorders', 'w:shd', 'w:noWrap',
-    'w:tcMar', 'w:textDirection', 'w:tcFitText', 'w:vAlign', 'w:hideMark', 'w:headers', 'w:cellIns',
-    'w:cellDel', 'w:cellMerge', 'w:tcPrChange',
-)
-
-_DOCX_TRPR_ORDER = (
-    'w:cnfStyle', 'w:divId', 'w:gridBefore', 'w:gridAfter', 'w:wBefore', 'w:wAfter', 'w:cantSplit',
-    'w:trHeight', 'w:tblHeader', 'w:tblPrEx', 'w:jc', 'w:hidden', 'w:ins', 'w:del', 'w:trPrChange',
-)
-
-
-def _docx_set_child(parent, order, tag, element=None, replace=True):
-    """Insert (or replace) a property child at the position its schema demands."""
-    existing = parent.find(qn(tag))
-    if existing is not None:
-        if not replace:
-            return existing
-        parent.remove(existing)
-    if element is None:
-        element = OxmlElement(tag)
-    successors = order[order.index(tag) + 1:]
-    parent.insert_element_before(element, *successors)
-    return element
-
-
-def _docx_toggle(parent, order, tag, value='true'):
-    el = _docx_set_child(parent, order, tag)
-    el.set(qn('w:val'), value)
-    return el
-
-
-def _docx_border(tag, sz='4', color='auto', val='single', space='0'):
-    """Build a single w:<edge> border element."""
-    el = OxmlElement(f'w:{tag}')
-    el.set(qn('w:val'), val)
-    el.set(qn('w:sz'), sz)
-    el.set(qn('w:space'), space)
-    el.set(qn('w:color'), color)
-    return el
-
-
-def _docx_shading(fill):
-    """Build a w:shd element for solid cell or paragraph fill."""
-    shd = OxmlElement('w:shd')
-    shd.set(qn('w:val'), 'clear')
-    shd.set(qn('w:color'), 'auto')
-    shd.set(qn('w:fill'), fill)
-    return shd
-
-
-def _docx_style_run(run, size=DOCX_BODY_PT, color=None, bold=False, italic=False, mono=False):
-    """Apply font, size, weight, and colour to a run, covering complex-script attributes.
-
-    Word only picks up Devanagari, Odia, Tamil, and Bengali glyphs when w:cs and
-    w:eastAsia name the font too, so every run sets all four rFonts attributes.
-    """
-    name = DOCX_MONO_FONT if mono else DOCX_FONT
-    font = run.font
-    font.name = name
-    font.size = Pt(size)
-    font.bold = bold
-    font.italic = italic
-    if color:
-        font.color.rgb = RGBColor.from_string(color)
-
-    rpr = run._element.get_or_add_rPr()
-    rfonts = rpr.get_or_add_rFonts()
-    for attr in ('w:ascii', 'w:hAnsi', 'w:cs', 'w:eastAsia'):
-        rfonts.set(qn(attr), name)
-
-    # Complex-script twins (szCs, bCs, iCs) drive Devanagari and Odia rendering; without
-    # them Word falls back to 10pt regular for those runs.
-    _docx_toggle(rpr, _DOCX_RPR_ORDER, 'w:szCs', str(int(round(size * 2))))
-    if bold:
-        _docx_toggle(rpr, _DOCX_RPR_ORDER, 'w:bCs')
-    if italic:
-        _docx_toggle(rpr, _DOCX_RPR_ORDER, 'w:iCs')
-    return run
-
-
-def _docx_tight_paragraph(paragraph, space_before=0.0, space_after=1.0):
-    """Collapse paragraph spacing so stacked cell blocks stay compact."""
-    fmt = paragraph.paragraph_format
-    fmt.space_before = Pt(space_before)
-    fmt.space_after = Pt(space_after)
-    fmt.line_spacing = 1.0
-    return paragraph
-
-
-def _docx_decorate_paragraph(paragraph, fill=None, accent=None, indent_mm=0.0):
-    """Give a paragraph the accent bar and tint used by metadata and calculation blocks."""
-    ppr = paragraph._element.get_or_add_pPr()
-    if accent:
-        pbdr = _docx_set_child(ppr, _DOCX_PPR_ORDER, 'w:pBdr')
-        pbdr.append(_docx_border('left', sz='12', color=accent, space='2'))
-    if fill:
-        _docx_set_child(ppr, _DOCX_PPR_ORDER, 'w:shd', _docx_shading(fill))
-    if indent_mm:
-        paragraph.paragraph_format.left_indent = Mm(indent_mm)
-    return paragraph
-
-
-def _docx_reset_cell(cell):
-    """Strip the placeholder paragraph so cell content starts flush at the top."""
-    for paragraph in list(cell.paragraphs):
-        paragraph._element.getparent().remove(paragraph._element)
-    return cell
-
-
-def _docx_add_cell_paragraph(cell, space_after=1.0):
-    paragraph = cell.add_paragraph()
-    return _docx_tight_paragraph(paragraph, space_after=space_after)
-
-
-def _docx_shade_cell(cell, fill):
-    tcpr = cell._element.get_or_add_tcPr()
-    _docx_set_child(tcpr, _DOCX_TCPR_ORDER, 'w:shd', _docx_shading(fill))
-    return cell
-
-
-def _docx_cell_borders(cell, **edges):
-    """Set explicit borders on one cell, e.g. top=('12', '333333')."""
-    tcpr = cell._element.get_or_add_tcPr()
-    borders = _docx_set_child(tcpr, _DOCX_TCPR_ORDER, 'w:tcBorders', replace=False)
-    for edge, spec in edges.items():
-        if spec is None:
-            borders.append(_docx_border(edge, val='none', sz='0'))
-        else:
-            sz, color = spec
-            borders.append(_docx_border(edge, sz=sz, color=color))
-    return cell
-
-
-def _docx_table_borders(table, sz='4', color=DOCX_RULE_CELL, inside_h=None, inside_v=None):
-    """Replace a table's border set, defaulting inside rules to the outer rule."""
-    tblpr = table._tbl.tblPr
-    borders = OxmlElement('w:tblBorders')
-    outer = {'val': 'single', 'sz': sz, 'color': color} if sz != '0' else {'val': 'none', 'sz': '0', 'color': 'auto'}
-    for edge in ('top', 'left', 'bottom', 'right'):
-        borders.append(_docx_border(edge, val=outer['val'], sz=outer['sz'], color=outer['color']))
-    for edge, spec in (('insideH', inside_h), ('insideV', inside_v)):
-        if spec is None:
-            borders.append(_docx_border(edge, val=outer['val'], sz=outer['sz'], color=outer['color']))
-        elif spec == 'none':
-            borders.append(_docx_border(edge, val='none', sz='0'))
-        else:
-            val, edge_sz, edge_color = spec
-            borders.append(_docx_border(edge, val=val, sz=edge_sz, color=edge_color))
-    _docx_set_child(tblpr, _DOCX_TBLPR_ORDER, 'w:tblBorders', borders)
-    return table
-
-
-def _docx_cell_margins(table, top=40, bottom=40, left=80, right=80):
-    """Set uniform cell padding in twips (20 twips to the point)."""
-    cell_mar = OxmlElement('w:tblCellMar')
-    for edge, value in (('top', top), ('left', left), ('bottom', bottom), ('right', right)):
-        el = OxmlElement(f'w:{edge}')
-        el.set(qn('w:w'), str(value))
-        el.set(qn('w:type'), 'dxa')
-        cell_mar.append(el)
-    _docx_set_child(table._tbl.tblPr, _DOCX_TBLPR_ORDER, 'w:tblCellMar', cell_mar)
-    return table
-
-
-def _docx_fixed_layout(table, widths_mm):
-    """Pin the table to a fixed layout with explicit column widths."""
-    table.autofit = False
-    tblpr = table._tbl.tblPr
-
-    layout = OxmlElement('w:tblLayout')
-    layout.set(qn('w:type'), 'fixed')
-    _docx_set_child(tblpr, _DOCX_TBLPR_ORDER, 'w:tblLayout', layout)
-
-    total_twips = int(sum(Mm(width).twips for width in widths_mm))
-    tbl_w = OxmlElement('w:tblW')
-    tbl_w.set(qn('w:w'), str(total_twips))
-    tbl_w.set(qn('w:type'), 'dxa')
-    _docx_set_child(tblpr, _DOCX_TBLPR_ORDER, 'w:tblW', tbl_w)
-
-    grid = table._tbl.find(qn('w:tblGrid'))
-    if grid is not None:
-        for idx, col in enumerate(grid.findall(qn('w:gridCol'))):
-            if idx < len(widths_mm):
-                col.set(qn('w:w'), str(int(Mm(widths_mm[idx]).twips)))
-
-    for idx, column in enumerate(table.columns):
-        if idx >= len(widths_mm):
-            break
-        width = Mm(widths_mm[idx])
-        column.width = width
-        for cell in column.cells:
-            cell.width = width
-    return table
-
-
-def _docx_apply_row_widths(row, widths_mm):
-    """Stamp column widths onto a freshly added row.
-
-    Table.add_row() copies an even split of the original table width onto each new cell,
-    which overrides the fixed grid and leaves ragged columns down the page.
-    """
-    for cell, width in zip(row.cells, widths_mm):
-        cell.width = Mm(width)
-    return row
-
-
-def _docx_row_properties(row, cant_split=True, header=False):
-    """Keep a row off a page break and optionally repeat it as a header row."""
-    trpr = row._tr.get_or_add_trPr()
-    if cant_split:
-        _docx_toggle(trpr, _DOCX_TRPR_ORDER, 'w:cantSplit')
-    if header:
-        _docx_toggle(trpr, _DOCX_TRPR_ORDER, 'w:tblHeader')
-    return row
-
-
-def _docx_setup_document(title_text):
-    """Create a landscape A4 document with the shared Unicode-safe base style."""
-    doc = Document()
-
-    normal = doc.styles['Normal']
-    normal.font.name = DOCX_FONT
-    normal.font.size = Pt(DOCX_BODY_PT)
-    rpr = normal.element.get_or_add_rPr()
-    rfonts = rpr.get_or_add_rFonts()
-    for attr in ('w:ascii', 'w:hAnsi', 'w:cs', 'w:eastAsia'):
-        rfonts.set(qn(attr), DOCX_FONT)
-    normal.paragraph_format.space_before = Pt(0)
-    normal.paragraph_format.space_after = Pt(1)
-    normal.paragraph_format.line_spacing = 1.0
-
-    section = doc.sections[0]
-    section.orientation = WD_ORIENT.LANDSCAPE
-    section.page_width = Mm(DOCX_PAGE_WIDTH_MM)
-    section.page_height = Mm(DOCX_PAGE_HEIGHT_MM)
-    section.top_margin = Mm(DOCX_MARGIN_MM)
-    section.bottom_margin = Mm(DOCX_MARGIN_MM)
-    section.left_margin = Mm(DOCX_MARGIN_MM)
-    section.right_margin = Mm(DOCX_MARGIN_MM)
-
-    heading = doc.add_paragraph()
-    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _docx_tight_paragraph(heading, space_after=6.0)
-    ppr = heading._element.get_or_add_pPr()
-    pbdr = _docx_set_child(ppr, _DOCX_PPR_ORDER, 'w:pBdr')
-    pbdr.append(_docx_border('bottom', sz='12', color=DOCX_RULE_SECTION, space='4'))
-    _docx_style_run(heading.add_run(title_text), size=DOCX_TITLE_PT, bold=True)
-
-    return doc
-
-
-def _docx_add_choice_table(cell, choice_list, language, width_mm):
-    """Render the two-column code/label choice list inside the Answer cell."""
-    code_width = min(9.0, width_mm * 0.16)
-    label_width = max(width_mm - code_width, code_width)
-
-    table = cell.add_table(rows=0, cols=2)
-    _docx_fixed_layout(table, [code_width, label_width])
-    _docx_table_borders(table, sz='0', inside_h=('dotted', '4', DOCX_RULE_CHOICE), inside_v='none')
-    _docx_cell_margins(table, top=10, bottom=10, left=0, right=20)
-
-    for choice in choice_list:
-        row = table.add_row()
-        _docx_row_properties(row, cant_split=True)
-        _docx_apply_row_widths(row, [code_width, label_width])
-
-        code_cell = _docx_reset_cell(row.cells[0])
-        code_para = _docx_add_cell_paragraph(code_cell, space_after=0.0)
-        code_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _docx_style_run(code_para.add_run(choice['name']), size=DOCX_SMALL_PT, bold=True)
-
-        label_cell = _docx_reset_cell(row.cells[1])
-        _docx_cell_borders(label_cell, left=('4', 'DDDDDD'))
-        label_para = _docx_add_cell_paragraph(label_cell, space_after=0.0)
-        label_text = get_lang_value(choice['labels'], language) or choice['name']
-        _docx_style_run(label_para.add_run(label_text), size=DOCX_SMALL_PT)
-
-    # _Cell.add_table appends a trailing paragraph; shrink it so it costs no space.
-    for paragraph in cell.paragraphs:
-        _docx_tight_paragraph(paragraph, space_after=0.0)
-        for run in paragraph.runs:
-            _docx_style_run(run, size=1.0)
-        if not paragraph.runs:
-            _docx_style_run(paragraph.add_run(''), size=1.0)
-    return table
-
-
-def _docx_add_section_row(table, label, widths_mm):
-    """Add the full-width group/repeat band, merged across all three columns."""
-    row = table.add_row()
-    _docx_row_properties(row, cant_split=True)
-    _docx_apply_row_widths(row, widths_mm)
-    cell = row.cells[0].merge(row.cells[2])
-    cell.width = Mm(sum(widths_mm))
-    _docx_reset_cell(cell)
-    _docx_shade_cell(cell, DOCX_FILL_SECTION)
-    _docx_cell_borders(cell, top=('12', DOCX_RULE_SECTION), bottom=('12', DOCX_RULE_SECTION))
-    paragraph = _docx_add_cell_paragraph(cell, space_after=0.0)
-    _docx_style_run(paragraph.add_run(label), size=DOCX_SECTION_PT, bold=True)
-    return row
-
-
-def build_codebook_docx(parser, language='Default'):
-    """Build an editable DOCX codebook from the parsed XLSForm, mirroring the HTML layout.
-
-    Reads the same parsed survey rows and choice lists as build_codebook_html, so the
-    Word file, the HTML file, and the PDF stay in step without a conversion round trip.
-    """
-    if not DOCX_AVAILABLE:
-        raise RuntimeError("python-docx is not installed. Run 'pip install python-docx' or pass --no-docx.")
-
-    title_text = parser.settings.get('form_title') or parser.settings.get('title') or os.path.splitext(os.path.basename(parser.excel_path))[0]
-    doc = _docx_setup_document(title_text)
-
-    col_widths = [DOCX_CONTENT_WIDTH_MM * fraction for fraction in DOCX_COL_FRACTIONS]
-
-    table = doc.add_table(rows=1, cols=3)
-    _docx_fixed_layout(table, col_widths)
-    _docx_table_borders(table, sz='4', color=DOCX_RULE_CELL)
-    _docx_cell_margins(table)
-
-    header_row = table.rows[0]
-    _docx_row_properties(header_row, cant_split=True, header=True)
-    for cell, heading in zip(header_row.cells, ('Field', 'Question', 'Answer')):
-        _docx_reset_cell(cell)
-        _docx_shade_cell(cell, DOCX_FILL_HEADER)
-        paragraph = _docx_add_cell_paragraph(cell, space_after=0.0)
-        _docx_style_run(paragraph.add_run(heading), size=DOCX_HEADER_PT, bold=True)
-
-    for item in parser.survey_rows:
-        raw_type = item['type'].strip()
-        base_type, list_name = split_type(raw_type)
-
-        if is_section_start(raw_type):
-            label = get_lang_value(item['labels'], language) or item['name']
-            _docx_add_section_row(table, label, col_widths)
-            continue
-
-        if is_section_end(raw_type):
-            continue
-
-        row = table.add_row()
-        _docx_row_properties(row, cant_split=True)
-        _docx_apply_row_widths(row, col_widths)
-        field_cell, question_cell, answer_cell = row.cells[0], row.cells[1], row.cells[2]
-
-        # Column 1: field name, with the required marker in red
-        _docx_reset_cell(field_cell)
-        field_para = _docx_add_cell_paragraph(field_cell, space_after=0.0)
-        _docx_style_run(field_para.add_run(item['name'] or ''), color=DOCX_COLOR_FIELD, bold=True)
-        if item['required']:
-            _docx_style_run(field_para.add_run(' (required)'), size=DOCX_SMALL_PT, color=DOCX_COLOR_REQUIRED, italic=True)
-
-        # Column 2: label, metadata note, calculation badge, hint, relevance
-        _docx_reset_cell(question_cell)
-        q_label = get_lang_value(item['labels'], language)
-        label_para = _docx_add_cell_paragraph(question_cell, space_after=0.0)
-        _docx_style_run(label_para.add_run(q_label or ''))
-
-        if base_type in METADATA_DESCRIPTIONS:
-            platform_info, desc_text = METADATA_DESCRIPTIONS[base_type]
-            meta_para = _docx_add_cell_paragraph(question_cell, space_after=0.0)
-            _docx_tight_paragraph(meta_para, space_before=2.0, space_after=0.0)
-            _docx_decorate_paragraph(meta_para, fill=DOCX_FILL_META, accent=DOCX_COLOR_META_RULE, indent_mm=1.2)
-            _docx_style_run(meta_para.add_run(f"[{platform_info}]"), size=DOCX_TINY_PT, color=DOCX_COLOR_META_TEXT, bold=True)
-            _docx_style_run(meta_para.add_run(f": {desc_text}"), size=DOCX_TINY_PT, color=DOCX_COLOR_META_TEXT)
-
-        if item['calculation'] or base_type == 'calculate':
-            cat_title, cat_desc = classify_calculation(item['calculation'])
-            calc_para = _docx_add_cell_paragraph(question_cell, space_after=0.0)
-            _docx_tight_paragraph(calc_para, space_before=2.0, space_after=0.0)
-            _docx_decorate_paragraph(calc_para, fill=DOCX_FILL_CALC, accent=DOCX_COLOR_CALC_RULE, indent_mm=1.2)
-            _docx_style_run(calc_para.add_run(cat_title), size=DOCX_TINY_PT, color=DOCX_COLOR_CALC_TEXT, bold=True)
-            trimmed_calc = trim_calculation(item['calculation'])
-            if trimmed_calc:
-                _docx_style_run(calc_para.add_run(': '), size=DOCX_TINY_PT, color=DOCX_COLOR_CALC_TEXT)
-                _docx_style_run(calc_para.add_run(trimmed_calc), size=DOCX_TINY_PT, color=DOCX_COLOR_CALC_TEXT, mono=True)
-            if cat_desc:
-                desc_para = _docx_add_cell_paragraph(question_cell, space_after=0.0)
-                _docx_decorate_paragraph(desc_para, fill=DOCX_FILL_CALC, indent_mm=1.2)
-                _docx_style_run(desc_para.add_run(cat_desc), size=DOCX_TINY_PT, color=DOCX_COLOR_META_TEXT, italic=True)
-
-        q_hint = get_lang_value(item['hints'], language)
-        if q_hint:
-            hint_para = _docx_add_cell_paragraph(question_cell, space_after=0.0)
-            _docx_tight_paragraph(hint_para, space_before=2.0, space_after=0.0)
-            _docx_style_run(hint_para.add_run(q_hint), size=DOCX_TINY_PT, color=DOCX_COLOR_HINT)
-
-        if item['relevance']:
-            rel_para = _docx_add_cell_paragraph(question_cell, space_after=0.0)
-            _docx_tight_paragraph(rel_para, space_before=2.0, space_after=0.0)
-            _docx_style_run(rel_para.add_run(f"Relevance: {item['relevance']}"), size=DOCX_TINY_PT, color=DOCX_COLOR_RELEVANCE, italic=True)
-
-        # Column 3: choice list for select types, otherwise left blank for writing on
-        _docx_reset_cell(answer_cell)
-        choice_list = []
-        if base_type.startswith(('select_one', 'select_multiple', 'select_or_other')) and list_name:
-            choice_list = get_choice_list_by_name(parser.choices, list_name)
-
-        if choice_list:
-            _docx_add_choice_table(answer_cell, choice_list, language, col_widths[2] - 4.0)
-        else:
-            blank_para = _docx_add_cell_paragraph(answer_cell, space_after=0.0)
-            _docx_style_run(blank_para.add_run(''))
-
-    return doc
-
-
-def generate_docx(parser, docx_path, language='Default'):
-    """Write the editable DOCX codebook for one language to disk."""
-    doc = build_codebook_docx(parser, language=language)
-    doc.save(docx_path)
-    return docx_path
-
-
 async def generate_pdf(html_path, pdf_path):
     """Render HTML codebook to landscape A4 PDF via Playwright Chromium."""
     async with async_playwright() as p:
@@ -1294,14 +778,10 @@ async def generate_pdf(html_path, pdf_path):
         )
         await browser.close()
 
-def process_xlsform(excel_path, target_lang=None, generate_pdf_flag=True, generate_docx_flag=True):
-    """Process a single XLSForm spreadsheet and generate HTML, PDF, and DOCX codebooks."""
+def process_xlsform(excel_path, target_lang=None, generate_pdf_flag=True):
+    """Process a single XLSForm spreadsheet and generate HTML/PDF codebooks."""
     print(f"Processing XLSForm: {os.path.basename(excel_path)}...")
     parser = XLSFormParser(excel_path)
-
-    if generate_docx_flag and not DOCX_AVAILABLE:
-        print("  python-docx not installed, skipping DOCX output. Install it with: pip install python-docx")
-        generate_docx_flag = False
 
     langs_to_process = parser.languages
     if target_lang:
@@ -1317,7 +797,6 @@ def process_xlsform(excel_path, target_lang=None, generate_pdf_flag=True, genera
         suffix = clean_language_suffix(lang)
         out_html_name = f"{base_name}_{suffix}.html" if suffix else f"{base_name}.html"
         out_pdf_name = f"{base_name}_{suffix}.pdf" if suffix else f"{base_name}.pdf"
-        out_docx_name = f"{base_name}_{suffix}.docx" if suffix else f"{base_name}.docx"
 
         print(f"  Building HTML codebook for language: {lang} -> {os.path.basename(out_html_name)}")
         html_content = build_codebook_html(parser, language=lang)
@@ -1331,26 +810,14 @@ def process_xlsform(excel_path, target_lang=None, generate_pdf_flag=True, genera
             asyncio.run(generate_pdf(out_html_name, out_pdf_name))
             print(f"    Saved PDF: {out_pdf_name}")
 
-        if generate_docx_flag:
-            print(f"    Generating DOCX: {out_docx_name}...")
-            generate_docx(parser, out_docx_name, language=lang)
-            print(f"    Saved DOCX: {out_docx_name}")
-
 def main():
-    parser = argparse.ArgumentParser(description="Direct XLSForm to Printable Codebook, PDF & DOCX Generator")
+    parser = argparse.ArgumentParser(description="Direct XLSForm to Printable Codebook & PDF Generator")
     parser.add_argument('--input', '-i', help="Path to input XLSForm (.xlsx) file")
     parser.add_argument('--dir', '-d', help="Directory containing XLSForm files")
     parser.add_argument('--lang', '-l', help="Target language (e.g. English, Hindi). If omitted, processes all languages.")
-    parser.add_argument('--no-pdf', action='store_true', help="Skip PDF generation.")
-    parser.add_argument('--no-docx', action='store_true', help="Skip editable DOCX generation.")
+    parser.add_argument('--no-pdf', action='store_true', help="Skip PDF generation and output HTML only.")
 
     args = parser.parse_args()
-
-    options = {
-        'target_lang': args.lang,
-        'generate_pdf_flag': not args.no_pdf,
-        'generate_docx_flag': not args.no_docx,
-    }
 
     if not args.input and not args.dir:
         cwd = os.getcwd()
@@ -1359,13 +826,13 @@ def main():
             print("No .xlsx files found in current directory.")
             sys.exit(1)
         for f in xlsx_files:
-            process_xlsform(f, **options)
+            process_xlsform(f, target_lang=args.lang, generate_pdf_flag=not args.no_pdf)
     elif args.input:
-        process_xlsform(args.input, **options)
+        process_xlsform(args.input, target_lang=args.lang, generate_pdf_flag=not args.no_pdf)
     elif args.dir:
         xlsx_files = [os.path.join(args.dir, f) for f in os.listdir(args.dir) if f.endswith('.xlsx') and not f.startswith('~$')]
         for f in xlsx_files:
-            process_xlsform(f, **options)
+            process_xlsform(f, target_lang=args.lang, generate_pdf_flag=not args.no_pdf)
 
 if __name__ == '__main__':
     main()
