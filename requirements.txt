@@ -1,0 +1,18 @@
+# XLSForm to printable codebook
+# Python 3.8 or newer. Install with: pip install -r requirements.txt
+
+# Reads the survey, choices, and settings sheets of an XLSForm .xlsx
+openpyxl==3.1.5
+
+# Builds the HTML codebook, and parses exported HTML in the legacy post-processors
+beautifulsoup4==4.15.0
+
+# Renders the A4 landscape PDF through headless Chromium.
+# The browser itself is a separate download: playwright install chromium
+# Skip both with --no-pdf.
+playwright==1.62.0
+
+# Writes the editable Word codebook. Imported behind a guard, so a missing
+# install degrades to HTML and PDF output rather than failing.
+# Skip with --no-docx.
+python-docx==1.2.0

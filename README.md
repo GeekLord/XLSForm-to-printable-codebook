@@ -1,6 +1,6 @@
 # XLSForm to printable codebook
 
-Print your survey before you field it. Point `xlsform_to_printable.py` at an XLSForm `.xlsx` file and you get a responsive HTML codebook and an A4 landscape PDF for every language in the form, without uploading anything to a server.
+Print your survey before you field it. Point `xlsform_to_printable.py` at an XLSForm `.xlsx` file and you get a responsive HTML codebook, an A4 landscape PDF, and an editable Word `.docx` for every language in the form, without uploading anything to a server.
 
 That server round trip is the whole reason this exists. The old way to get a paper copy of an ODK, SurveyCTO, or KoboToolbox form was to upload the spreadsheet, export the platform's printable HTML, then run a post-processing script over it to make the tables usable on paper. Two of those scripts still live here (`html_make_responsive.py` and `html_make_responsive_print.py`) and still work on exported HTML. The direct converter skips the upload and reads the `survey`, `choices`, and `settings` sheets itself.
 
@@ -9,15 +9,15 @@ That server round trip is the whole reason this exists. The old way to get a pap
 Python 3.8 or newer, then:
 
 ```bash
-pip install openpyxl beautifulsoup4 playwright
+pip install -r requirements.txt
 playwright install chromium
 ```
 
-Chromium is only needed for PDF rendering. If you pass `--no-pdf`, you can skip it.
+Chromium is only needed for PDF rendering. If you pass `--no-pdf`, you can skip it. `python-docx` is only needed for the Word file, and the script says so and carries on with HTML and PDF if the import fails, so `--no-docx` runs fine without it.
 
 ## Usage
 
-Every language in the form, HTML and PDF:
+Every language in the form, HTML, PDF, and DOCX:
 
 ```bash
 python xlsform_to_printable.py --input "Brick Kiln Literacy RCT - Household Survey.xlsx"
@@ -35,15 +35,21 @@ Every `.xlsx` in a folder, skipping Excel lock files:
 python xlsform_to_printable.py --dir /path/to/forms/
 ```
 
-HTML only, no browser needed:
+HTML and DOCX only, no browser needed:
 
 ```bash
 python xlsform_to_printable.py --input form.xlsx --no-pdf
 ```
 
+Skip the Word file and keep the print-ready PDF:
+
+```bash
+python xlsform_to_printable.py --input form.xlsx --no-docx
+```
+
 With no `--input` and no `--dir`, the script processes every `.xlsx` in the current working directory.
 
-Output files sit next to the source spreadsheet and take the language name as a suffix: `Brick Kiln Literacy RCT - Household Survey_English.html`, `..._Odia.html`, and the matching `.pdf` files. A form with no `label::` columns produces one unsuffixed pair.
+Output files sit next to the source spreadsheet and take the language name as a suffix: `Brick Kiln Literacy RCT - Household Survey_English.html`, `..._Odia.html`, and the matching `.pdf` and `.docx` files. A form with no `label::` columns produces one unsuffixed set.
 
 ## What the codebook looks like
 
@@ -113,7 +119,7 @@ Order matters here. A formula that wraps `now()` inside `format-date-time()` is 
 
 ## Print behaviour
 
-The screen layout and the print layout come from the same stylesheet, `RESPONSIVE_STYLES`, with the print rules in a `@media print` block.
+The screen layout and the print layout come from the same stylesheet, `RESPONSIVE_STYLES`, with the print rules in a `@media print` block. The DOCX is a separate renderer and mirrors these decisions in Word's own vocabulary; see the section below.
 
 - `@page` is A4 landscape with 8mm vertical and 10mm horizontal margins. The Playwright call passes 10mm on all four sides, and that is what the finished PDF uses.
 - `thead` is a `table-header-group`, so the Field, Question, and Answer headers reappear at the top of each page.
@@ -124,13 +130,33 @@ The screen layout and the print layout come from the same stylesheet, `RESPONSIV
 - Screen breakpoints at 768px and 480px shrink the type and let `.table-responsive` scroll sideways rather than crush the columns.
 - The scripts read and write UTF-8 throughout, and the font stack leads with `"Arial Unicode MS"` so Odia, Devanagari, Tamil, and Bengali labels render instead of showing boxes.
 
+## Editable DOCX output
+
+The Word file is built by `build_codebook_docx()` from the same parsed survey rows and choice lists that feed the HTML, not by converting the HTML or the PDF. Nothing is scraped back out of a rendered file, so the three outputs cannot drift apart, and every element the HTML shows in a row appears in the same order in the Word table.
+
+It is a real Word table, so a research manager can retitle a section, reword a prompt, add an enumerator instruction, or drop a question, and the layout reflows on its own.
+
+- One three-column table, fixed layout, matching the HTML proportions: 22%, 50%, 28% of the 277mm text block, so a Word column measures 172.8pt, 392.6pt, and 219.9pt.
+- A4 landscape with 10mm margins, the same page setup the PDF uses.
+- The Field, Question, and Answer row is marked as a repeating header row, so it reappears on every page the way `thead` does in print.
+- Rows carry `cantSplit`, which is the Word equivalent of `page-break-inside: avoid`, keeping a question with its choice list.
+- Group and repeat rows become a band merged across all three columns, tinted `#F0F4F8` with 1.5pt rules above and below, matching the print stylesheet rather than the darker screen colour.
+- Metadata notes and calculation badges keep their tint and left accent bar, drawn as paragraph shading and a paragraph border.
+- Choice lists are a borderless nested table inside the Answer cell, a narrow centred code column beside the wrapping label, with dotted row rules.
+- Every run names `Arial Unicode MS` on all four of `w:ascii`, `w:hAnsi`, `w:cs`, and `w:eastAsia`, and sets the complex-script twins `w:szCs`, `w:bCs`, and `w:iCs`. Without those, Word renders Devanagari, Odia, Tamil, and Bengali runs at a default 10pt regular instead of the size and weight the row asked for.
+
+Two things the Word file cannot carry over from the HTML. Long formulas are trimmed to 65 characters, as in the PDF, and there is no hover text to hold the rest, since `title` attributes have no Word equivalent. The `--no-pdf` and `--no-docx` flags are independent, so the source spreadsheet is still the only complete record of a long `pulldata()` or nested `if()`.
+
+Word validates property elements by position, not merely by presence, so the helpers that write raw WordprocessingML insert each child at its schema slot instead of appending. Getting this wrong is what produces the unreadable-content repair prompt on open.
+
 ## Repository files
 
-- `xlsform_to_printable.py`: the direct converter. Parses the `.xlsx`, builds the HTML, renders the PDF.
+- `xlsform_to_printable.py`: the direct converter. Parses the `.xlsx`, builds the HTML, renders the PDF, writes the DOCX.
 - `html_make_responsive.py`: post-processor for HTML exported from a survey platform. Keeps the original table layout, injects responsive and print CSS, writes a landscape A4 PDF.
 - `html_make_responsive_print.py`: alternative post-processor that rebuilds the exported tables as card-style question blocks for portrait A4.
 - `backup_html_make_responsive.py`: frozen reference copy of the post-processor. Not an entry point.
 - `xlsform_to_printable_plan.md`: architecture notes, the XLSForm element mapping matrix, and the implementation roadmap.
+- `requirements.txt`: the four third-party packages, pinned. Chromium is not in here; it comes from `playwright install chromium`.
 - `Brick Kiln Literacy RCT - Household Survey.xlsx`: sample form with English and Odia labels.
 
 Both post-processing scripts take no arguments. They process every `.html` file in the current working directory, overwrite each one with the responsive version, and write a PDF beside it:
