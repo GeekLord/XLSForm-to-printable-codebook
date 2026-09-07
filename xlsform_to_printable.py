@@ -1,3 +1,44 @@
+"""
+xlsform_to_printable.py - XLSForm to Printable 3-Column Codebook Generator
+
+Converts ODK / KoboToolbox / SurveyCTO XLSForm spreadsheets into professional,
+printable 3-column data dictionaries and technical codebooks in HTML, PDF,
+and editable Microsoft Word (.docx) formats.
+
+Architectural Paradigm:
+-----------------------
+1. 3-Column Data Dictionary Layout:
+   - Column 1: Field Name (22% width): Stored variable name, highlighted in bold,
+     with explicit '(required)' tags for mandatory responses.
+   - Column 2: Question & Logic (50% width): Human-readable question prompt,
+     enumerator guidance hints, skip logic / relevance conditions, automated
+     platform metadata descriptors, and categorized calculation formulas.
+   - Column 3: Answer Options (28% width): Two-column nested choice table displaying
+     the raw stored choice value alongside its localized label text.
+
+2. Automated Calculation Taxonomy:
+   Inspects calculation expressions and categorizes them with contextual badges
+   and human-readable descriptions (e.g., CSV lookups via `pulldata()`, choice
+   label lookups via `jr:choice-name()`, timestamps, string processing, and conditional logic).
+   Long expressions are trimmed for clean visual presentation while retaining full
+   code tooltips.
+
+3. Platform Metadata Annotations:
+   Recognizes background metadata fields (start, end, today, deviceid, audit,
+   simserial, subscriberid, start-geopoint) and automatically attaches explanatory
+   callouts explaining their data collection role.
+
+4. Multi-Language Codebook Generation:
+   Automatically detects localized `label::[Lang]` and `hint::[Lang]` columns,
+   generating separate, synchronized HTML, PDF, and DOCX codebooks per language.
+
+5. OpenXML Schema Precision & Complex Script Typography:
+   Generates native Microsoft Word (.docx) documents in landscape A4 orientation.
+   Utilizes strict ECMA-376 schema ordering to prevent file repair warnings.
+   Binds high-coverage unicode typography (Arial Unicode MS) across standard and 
+   complex-script attributes ensuring flawless rendering for Indic and Arabic scripts.
+"""
+
 import os
 import sys
 import re
@@ -7,6 +48,8 @@ from bs4 import BeautifulSoup
 import openpyxl
 from playwright.async_api import async_playwright
 
+# Optional python-docx import: Enables direct generation of editable Word (.docx) documents.
+# If python-docx is not installed, gracefully falls back to HTML and PDF generation.
 try:
     from docx import Document
     from docx.enum.section import WD_ORIENT
@@ -18,6 +61,13 @@ try:
 except ImportError:
     DOCX_AVAILABLE = False
 
+
+# ==============================================================================
+# CSS & PRINT STYLES (3-COLUMN FIXED TABLE LAYOUT)
+# ==============================================================================
+# Responsive and print-optimized styles engineered for technical survey codebooks.
+# Features a rigid 3-column fixed table layout (22% / 50% / 28%), dark section bands,
+# high-contrast metadata badges, and @media print pagination controls.
 RESPONSIVE_STYLES = """
 .spacer {
     display: none !important;
@@ -322,6 +372,13 @@ img.choicePrompt {
 }
 """
 
+
+# ==============================================================================
+# PLATFORM METADATA & CALCULATION TAXONOMY
+# ==============================================================================
+
+# Dictionary of recognized mobile data collection metadata fields.
+# Maps variable type strings to a tuple of (Platform Information, Purpose Description).
 METADATA_DESCRIPTIONS = {
     'start': ('ODK / SurveyCTO / KoboToolbox Metadata', 'Automated timestamp recorded when the survey session starts.'),
     'end': ('ODK / SurveyCTO / KoboToolbox Metadata', 'Automated timestamp recorded when the survey session ends.'),
@@ -341,8 +398,27 @@ METADATA_DESCRIPTIONS = {
     'casesave': ('SurveyCTO Metadata', 'Case Management saved status field.'),
 }
 
+
 def classify_calculation(formula_str):
-    """Categorize calculation formulas across platforms and return category + explanatory detail."""
+    """
+    Classify an XLSForm calculation formula into an architectural category with explanatory details.
+
+    Detects specialized functions:
+    - `pulldata()`: Pre-loaded CSV dataset lookups
+    - `jr:choice-name()`: Choice label resolutions
+    - `now()`, `once(now())`: Timestamp captures
+    - `format-date-time()`: Date/time formatting
+    - `decimal-date-time()`: Duration mathematics
+    - `selected-at()`, `count-selected()`: Multi-select evaluations
+    - `concat()`, `substr()`, `string-length()`: String manipulations
+    - `if()`: Conditional logic branching
+
+    Args:
+        formula_str (str): Raw calculation formula expression from survey sheet.
+
+    Returns:
+        tuple[str, str]: (Category Badge Title, Descriptive Purpose Explanation)
+    """
     if not formula_str:
         return 'Calculation', ''
     
@@ -367,14 +443,33 @@ def classify_calculation(formula_str):
     else:
         return 'Calculation', ''
 
+
+# Maximum character length for displayed calculation formulas before truncation
 CALC_TRIM_LENGTH = 65
 
+# Group/Repeat section tag tuples
 SECTION_START_PREFIXES = ('begin group', 'begin_group', 'begin repeat', 'begin_repeat')
 SECTION_END_TYPES = ('end_group', 'end group', 'end_repeat', 'end repeat')
 
 
+# ==============================================================================
+# XLSFORM PARSING HELPERS
+# ==============================================================================
+
 def split_type(raw_type):
-    """Split an XLSForm type cell into its base type and trailing list name."""
+    """
+    Split an XLSForm `type` cell into its lowercase base type and trailing list name.
+
+    Example:
+        'select_one village_list' -> ('select_one', 'village_list')
+        'text'                    -> ('text', '')
+
+    Args:
+        raw_type (str): Raw string value from 'type' column.
+
+    Returns:
+        tuple[str, str]: (base_type, list_name)
+    """
     parts = str(raw_type or '').strip().split(None, 1)
     base_type = parts[0].lower() if parts else ''
     list_name = parts[1].strip() if len(parts) > 1 else ''
@@ -382,17 +477,42 @@ def split_type(raw_type):
 
 
 def is_section_start(raw_type):
-    """True for group/repeat opening rows, which render as full-width section bands."""
+    """
+    Determine if a row begins a group or repeat container block.
+
+    Args:
+        raw_type (str): Raw question type string.
+
+    Returns:
+        bool: True if row starts a group or repeat.
+    """
     return str(raw_type or '').strip().lower().startswith(SECTION_START_PREFIXES)
 
 
 def is_section_end(raw_type):
-    """True for group/repeat closing rows, which are dropped from the codebook."""
+    """
+    Determine if a row closes a group or repeat container block.
+
+    Args:
+        raw_type (str): Raw question type string.
+
+    Returns:
+        bool: True if row closes a group or repeat.
+    """
     return str(raw_type or '').strip().lower() in SECTION_END_TYPES
 
 
 def trim_calculation(formula, max_len=CALC_TRIM_LENGTH):
-    """Shorten a formula for display so one long expression cannot stretch its row."""
+    """
+    Shorten a formula for clean tabular display while retaining ellipsis cue.
+
+    Args:
+        formula (str): Raw calculation expression.
+        max_len (int): Maximum allowable character count.
+
+    Returns:
+        str: Truncated formula string with '...' if length exceeded.
+    """
     formula = formula or ''
     if len(formula) > max_len:
         return formula[:max_len].rstrip() + '...'
@@ -400,13 +520,36 @@ def trim_calculation(formula, max_len=CALC_TRIM_LENGTH):
 
 
 def extract_language_name(header_str):
-    """Extract language identifier from column header string like 'label::English (en)' -> 'English (en)'."""
+    """
+    Extract language identifier from an XLSForm localized header string.
+
+    Example:
+        'label::English (en)' -> 'English (en)'
+        'label'               -> 'Default'
+
+    Args:
+        header_str (str): Raw column header text.
+
+    Returns:
+        str: Extracted language name.
+    """
     if '::' in header_str:
         return header_str.split('::', 1)[1].strip()
     return 'Default'
 
+
 def clean_language_suffix(lang_name):
-    """Clean language name for filename suffix like 'English (en)' -> 'English'."""
+    """
+    Sanitize language name for clean output file naming.
+
+    Strips parenthetical locale codes (e.g., 'English (en)' -> 'English').
+
+    Args:
+        lang_name (str): Raw language name.
+
+    Returns:
+        str: Sanitized language string suitable for filenames.
+    """
     if not lang_name or lang_name == 'Default':
         return ''
     match = re.match(r'^([^\(\)]+)', lang_name)
@@ -414,15 +557,37 @@ def clean_language_suffix(lang_name):
         return match.group(1).strip()
     return lang_name.strip()
 
+
 def get_header_index(header_map, *keys):
-    """Safely return column index for any matching key, avoiding 0-evaluating-as-falsy bug."""
+    """
+    Safely look up column index for any candidate key in a header map.
+
+    Avoids Python's 0-evaluating-as-falsy pitfall.
+
+    Args:
+        header_map (dict[str, int]): Header string to column index mapping.
+        *keys (str): Candidate column names to search.
+
+    Returns:
+        int | None: Matching column index or None.
+    """
     for key in keys:
         if key in header_map:
             return header_map[key]
     return None
 
+
 def get_lang_value(dict_of_langs, target_lang):
-    """Retrieve language string with clean fallback handling."""
+    """
+    Retrieve localized string with intelligent multi-stage fallback resolution.
+
+    Args:
+        dict_of_langs (dict[str, str]): Mapping of language names to text.
+        target_lang (str): Desired language code/name.
+
+    Returns:
+        str: Resolved localized string or empty string.
+    """
     if not dict_of_langs:
         return ''
     if target_lang in dict_of_langs and dict_of_langs[target_lang]:
@@ -438,9 +603,42 @@ def get_lang_value(dict_of_langs, target_lang):
             return val
     return ''
 
+# ==============================================================================
+# EXCEL WORKBOOK PARSER (XLSFormParser)
+# ==============================================================================
+
 class XLSFormParser:
+    """
+    Parses an ODK / KoboToolbox / SurveyCTO XLSForm workbook into structured Python dictionaries.
+
+    Engineered specifically for technical codebook generation:
+    - Normalizes worksheet names case-insensitively ('survey', 'choices', 'settings').
+    - Evaluates cached formula values via openpyxl's `data_only=True` mode.
+    - Captures form-wide settings (title, form_id, version).
+    - Detects all localized language column sets (label::[Language], hint::[Language], constraint_message::[Language]).
+    - Parses option choices with both raw value codes and localized labels.
+    - Extracts complete technical metadata per survey question (name, type, required status,
+      hints, constraint expressions, constraint messages, relevance expressions, and calculations).
+
+    Attributes:
+        excel_path (str): Filesystem path to source .xlsx file.
+        wb (openpyxl.Workbook): Openpyxl workbook handle in data_only mode.
+        sheets (dict[str, str]): Lowercase-to-actual worksheet name lookup mapping.
+        settings (dict[str, str]): Settings key-value pairs.
+        languages (list[str]): List of detected language names.
+        choices (dict[str, list[dict]]): Parsed option choice lists keyed by list_name.
+        survey_rows (list[dict]): Parsed survey rows with full technical logic.
+    """
+
     def __init__(self, excel_path):
+        """
+        Load workbook and execute parsing sequence across all sheets.
+
+        Args:
+            excel_path (str): Path to input XLSForm spreadsheet (.xlsx).
+        """
         self.excel_path = excel_path
+        # data_only=True loads evaluated formula results instead of raw formula strings
         self.wb = openpyxl.load_workbook(excel_path, data_only=True)
         self.sheets = {name.lower().strip(): name for name in self.wb.sheetnames}
         
@@ -450,12 +648,27 @@ class XLSFormParser:
         self.survey_rows = self._parse_survey()
 
     def _get_sheet(self, target_name):
+        """
+        Retrieve worksheet by case-insensitive name.
+
+        Args:
+            target_name (str): Target sheet name (e.g. 'survey', 'choices', 'settings').
+
+        Returns:
+            openpyxl.worksheet.worksheet.Worksheet | None: Openpyxl sheet or None if absent.
+        """
         actual_name = self.sheets.get(target_name.lower())
         if actual_name:
             return self.wb[actual_name]
         return None
 
     def _parse_settings(self):
+        """
+        Parse form-level metadata from the 'settings' sheet.
+
+        Returns:
+            dict[str, str]: Configuration settings dictionary.
+        """
         settings = {}
         sheet = self._get_sheet('settings')
         if not sheet or sheet.max_row < 2:
@@ -470,6 +683,12 @@ class XLSFormParser:
         return settings
 
     def _detect_languages(self):
+        """
+        Scan headers in 'survey' and 'choices' sheets to identify all defined language translations.
+
+        Returns:
+            list[str]: Unique list of detected language names (defaults to ['Default']).
+        """
         languages = []
         for sheet_name in ['survey', 'choices']:
             sheet = self._get_sheet(sheet_name)
@@ -486,6 +705,15 @@ class XLSFormParser:
         return languages
 
     def _parse_choices(self):
+        """
+        Parse option choice rows from the 'choices' sheet.
+
+        Constructs a dictionary where each `list_name` maps to an array of option dicts
+        containing the raw stored code ('name') and localized text labels ('labels').
+
+        Returns:
+            dict[str, list[dict]]: Choice list dictionary keyed by list_name.
+        """
         choices = {}
         sheet = self._get_sheet('choices')
         if not sheet or sheet.max_row < 2:
@@ -536,6 +764,23 @@ class XLSFormParser:
         return choices
 
     def _parse_survey(self):
+        """
+        Parse all technical survey question rows from the 'survey' sheet.
+
+        Extracts comprehensive question metadata:
+        - `type`: Question type string (e.g. 'select_one q1', 'calculate', 'begin group').
+        - `name`: Variable field name.
+        - `required`: Boolean flag indicating if response is mandatory.
+        - `labels`: Dictionary of localized prompt labels.
+        - `hints`: Dictionary of localized enumerator notes.
+        - `constraint_msgs`: Dictionary of localized error messages.
+        - `relevance`: Skip logic relevance expression.
+        - `constraint`: Validation check constraint expression.
+        - `calculation`: Calculation formula expression.
+
+        Returns:
+            list[dict]: Ordered collection of parsed question definitions.
+        """
         survey_rows = []
         sheet = self._get_sheet('survey')
         if not sheet or sheet.max_row < 2:
@@ -570,7 +815,7 @@ class XLSFormParser:
             constraint_msgs = {}
 
             for lang in self.languages:
-                # Label
+                # Localized question label
                 col_idx = get_header_index(header_map, f'label::{lang}')
                 if col_idx is None and lang != 'Default':
                     for h, idx in header_map.items():
@@ -581,7 +826,7 @@ class XLSFormParser:
                     col_idx = get_header_index(header_map, 'label')
                 labels[lang] = str(row_cells[col_idx].value or '').strip() if (col_idx is not None and col_idx < len(row_cells) and row_cells[col_idx].value is not None) else ''
 
-                # Hint
+                # Localized enumerator hint
                 col_idx = get_header_index(header_map, f'hint::{lang}')
                 if col_idx is None and lang != 'Default':
                     for h, idx in header_map.items():
@@ -592,7 +837,7 @@ class XLSFormParser:
                     col_idx = get_header_index(header_map, 'hint')
                 hints[lang] = str(row_cells[col_idx].value or '').strip() if (col_idx is not None and col_idx < len(row_cells) and row_cells[col_idx].value is not None) else ''
 
-                # Constraint message
+                # Localized constraint validation message
                 col_idx = get_header_index(header_map, f'constraint_message::{lang}')
                 if col_idx is None and lang != 'Default':
                     for h, idx in header_map.items():
@@ -626,8 +871,18 @@ class XLSFormParser:
 
         return survey_rows
 
+
 def get_choice_list_by_name(choices_dict, list_name):
-    """Flexible lookup for choice list matching name case-insensitively."""
+    """
+    Retrieve option list from choices dictionary with case-insensitive tolerance.
+
+    Args:
+        choices_dict (dict[str, list[dict]]): Parsed choice options grouped by list_name.
+        list_name (str): Expected choice list name.
+
+    Returns:
+        list[dict]: Array of choice items, or empty list if not found.
+    """
     if not list_name or not choices_dict:
         return []
     if list_name in choices_dict:
@@ -637,8 +892,33 @@ def get_choice_list_by_name(choices_dict, list_name):
             return items
     return []
 
+# ==============================================================================
+# HTML CODEBOOK BUILDER (3-COLUMN TABLE)
+# ==============================================================================
+
 def build_codebook_html(parser, language='Default'):
-    """Build responsive HTML codebook for a specific language."""
+    """
+    Construct a responsive, 3-column HTML codebook for a designated survey language.
+
+    Layout Architecture:
+    - Title Banner: Centered form title with underline rule.
+    - Outer Table: Fixed-width responsive table with `table-layout: fixed`.
+    - Column 1 (22% width): Variable field name in bold, required marker in red italic.
+    - Column 2 (50% width): Question text, platform metadata annotations,
+      categorized calculation badges (with hover tooltip of raw formula),
+      enumerator hints, and skip logic / relevance conditions.
+    - Column 3 (28% width): Two-column nested choices table (choice value | label),
+      or blank area for freeform responses.
+    - Section Rows: Full-width spanning cells (`colspan="3"`) with dark background
+      styling (`#2B2D42`) for groups and repeats.
+
+    Args:
+        parser (XLSFormParser): Parsed XLSForm workbook instance.
+        language (str): Target language to extract and display.
+
+    Returns:
+        str: Serialized HTML document string.
+    """
     soup = BeautifulSoup('<!DOCTYPE html><html><head></head><body></body></html>', 'html.parser')
     
     head = soup.head
@@ -668,7 +948,7 @@ def build_codebook_html(parser, language='Default'):
     table = soup.new_tag('table', attrs={'class': 'table table-bordered table-condensed'})
     table_wrapper.append(table)
 
-    # Table Header
+    # Table Header with 3-column fixed widths
     thead = soup.new_tag('thead')
     table.append(thead)
     tr_head = soup.new_tag('tr')
@@ -689,7 +969,7 @@ def build_codebook_html(parser, language='Default'):
         raw_type = item['type'].strip()
         base_type, list_name = split_type(raw_type)
 
-        # Section header check for group and repeat beginnings
+        # 1. Section Header: Check for group and repeat container beginnings
         if is_section_start(raw_type):
             label = get_lang_value(item['labels'], language) or item['name']
             if not label and 'group' in raw_type.lower():
@@ -704,14 +984,14 @@ def build_codebook_html(parser, language='Default'):
             tbody.append(tr)
             continue
 
-        # Group closing tags check (end_group / end group / end_repeat / end repeat)
+        # 2. Suppress closing group / repeat tags
         if is_section_end(raw_type):
             continue
 
-        # Standard Field Row
+        # 3. Standard Field Row
         tr = soup.new_tag('tr', attrs={'class': 'gray entryRow' if item['name'] else 'entryRow'})
         
-        # Column 1: Field Name
+        # Column 1: Field Name (22%)
         td_field = soup.new_tag('td', attrs={'class': 'fieldCell', 'style': 'padding-left: 5px;'})
         span_field = soup.new_tag('span')
         span_field.string = item['name'] if item['name'] else ''
@@ -722,13 +1002,13 @@ def build_codebook_html(parser, language='Default'):
         td_field.append(span_field)
         tr.append(td_field)
 
-        # Column 2: Question Prompt & Details
+        # Column 2: Question Prompt & Details (50%)
         td_q = soup.new_tag('td', attrs={'class': 'questionCell'})
         q_label = get_lang_value(item['labels'], language)
         if q_label:
             td_q.append(q_label)
 
-        # Platform Metadata Tagging: If variable type is a known metadata field (start, end, today, deviceid, etc.)
+        # Platform Metadata Tagging: If variable type is a known background metadata field
         if base_type in METADATA_DESCRIPTIONS:
             platform_info, desc_text = METADATA_DESCRIPTIONS[base_type]
             div_meta = soup.new_tag('div', attrs={'class': 'metadata-tag'})
@@ -755,12 +1035,14 @@ def build_codebook_html(parser, language='Default'):
                 div_calc.append(div_desc)
             td_q.append(div_calc)
 
+        # Guidance Hint
         q_hint = get_lang_value(item['hints'], language)
         if q_hint:
             div_hint = soup.new_tag('div', attrs={'class': 'hint'})
             div_hint.string = q_hint
             td_q.append(div_hint)
 
+        # Skip Logic / Relevance Condition
         if item['relevance']:
             div_rel = soup.new_tag('div', attrs={'class': 'relevance'})
             div_rel.string = f"Relevance: {item['relevance']}"
@@ -768,7 +1050,7 @@ def build_codebook_html(parser, language='Default'):
 
         tr.append(td_q)
 
-        # Column 3: Answer / Choice Table
+        # Column 3: Answer / Choice Table (28%)
         td_a = soup.new_tag('td', attrs={'class': 'answerCell'})
 
         if base_type.startswith(('select_one', 'select_multiple', 'select_or_other')) and list_name:
@@ -799,9 +1081,17 @@ def build_codebook_html(parser, language='Default'):
 
     return str(soup)
 
+
+# ==============================================================================
+# OPENXML / WORD (.DOCX) CONSTANTS & SCHEMA ENGINE
+# ==============================================================================
+
+# Typography: Arial Unicode MS provides comprehensive glyph coverage across
+# Devanagari, Bengali, Odia, Tamil, Telugu, Arabic, and Latin alphabets.
 DOCX_FONT = 'Arial Unicode MS'
 DOCX_MONO_FONT = 'Consolas'
 
+# Font sizing scale (in typographical points)
 DOCX_TITLE_PT = 14.0
 DOCX_HEADER_PT = 10.0
 DOCX_SECTION_PT = 10.5
@@ -809,6 +1099,7 @@ DOCX_BODY_PT = 9.5
 DOCX_SMALL_PT = 8.0
 DOCX_TINY_PT = 7.5
 
+# Hex Color Palette (without '#' prefix for WordprocessingML)
 DOCX_COLOR_TEXT = '000000'
 DOCX_COLOR_FIELD = '222222'
 DOCX_COLOR_REQUIRED = 'CC0000'
@@ -828,15 +1119,23 @@ DOCX_RULE_SECTION = '333333'
 DOCX_RULE_CELL = '999999'
 DOCX_RULE_CHOICE = 'CCCCCC'
 
+# Landscape A4 Page Geometry (ISO 216)
 DOCX_PAGE_WIDTH_MM = 297.0
 DOCX_PAGE_HEIGHT_MM = 210.0
 DOCX_MARGIN_MM = 10.0
 DOCX_CONTENT_WIDTH_MM = DOCX_PAGE_WIDTH_MM - (2 * DOCX_MARGIN_MM)
+
+# 3-Column Relative Width Distribution (22% / 50% / 28%)
 DOCX_COL_FRACTIONS = (0.22, 0.50, 0.28)
 
 
-# WordprocessingML validates property children by position, not just presence, so every
-# element written by hand below is inserted at its schema slot rather than appended.
+# ------------------------------------------------------------------------------
+# OpenXML ECMA-376 Strict Schema Ordering Definitions
+# ------------------------------------------------------------------------------
+# WordprocessingML validates property child elements by schema position rather than
+# mere presence. Appending child elements out of order results in damaged document warnings.
+# The tuples below enforce the exact schema sequence for paragraphs, runs, tables, cells, and rows.
+
 _DOCX_PPR_ORDER = (
     'w:pStyle', 'w:keepNext', 'w:keepLines', 'w:pageBreakBefore', 'w:framePr', 'w:widowControl',
     'w:numPr', 'w:suppressLineNumbers', 'w:pBdr', 'w:shd', 'w:tabs', 'w:suppressAutoHyphens',
@@ -874,8 +1173,24 @@ _DOCX_TRPR_ORDER = (
 )
 
 
+# ==============================================================================
+# OPENXML LOW-LEVEL PROPERTY HELPERS
+# ==============================================================================
+
 def _docx_set_child(parent, order, tag, element=None, replace=True):
-    """Insert (or replace) a property child at the position its schema demands."""
+    """
+    Insert (or replace) a property child at the position its schema demands.
+
+    Args:
+        parent: Parent XML element.
+        order (tuple[str]): Canonical schema order tuple.
+        tag (str): Prefixed tag name.
+        element: Element instance or None to construct new.
+        replace (bool): Whether to replace matching existing child.
+
+    Returns:
+        OxmlElement: Inserted child element.
+    """
     existing = parent.find(qn(tag))
     if existing is not None:
         if not replace:
@@ -889,6 +1204,7 @@ def _docx_set_child(parent, order, tag, element=None, replace=True):
 
 
 def _docx_toggle(parent, order, tag, value='true'):
+    """Insert a boolean toggle child element (e.g. w:cantSplit, w:tblHeader)."""
     el = _docx_set_child(parent, order, tag)
     el.set(qn('w:val'), value)
     return el
@@ -914,10 +1230,13 @@ def _docx_shading(fill):
 
 
 def _docx_style_run(run, size=DOCX_BODY_PT, color=None, bold=False, italic=False, mono=False):
-    """Apply font, size, weight, and colour to a run, covering complex-script attributes.
+    """
+    Apply font, size, weight, and colour to a run, covering complex-script attributes.
 
     Word only picks up Devanagari, Odia, Tamil, and Bengali glyphs when w:cs and
     w:eastAsia name the font too, so every run sets all four rFonts attributes.
+    Complex-script twins (szCs, bCs, iCs) drive non-Latin font rendering; without
+    them Word falls back to 10pt regular for those runs.
     """
     name = DOCX_MONO_FONT if mono else DOCX_FONT
     font = run.font
@@ -933,8 +1252,6 @@ def _docx_style_run(run, size=DOCX_BODY_PT, color=None, bold=False, italic=False
     for attr in ('w:ascii', 'w:hAnsi', 'w:cs', 'w:eastAsia'):
         rfonts.set(qn(attr), name)
 
-    # Complex-script twins (szCs, bCs, iCs) drive Devanagari and Odia rendering; without
-    # them Word falls back to 10pt regular for those runs.
     _docx_toggle(rpr, _DOCX_RPR_ORDER, 'w:szCs', str(int(round(size * 2))))
     if bold:
         _docx_toggle(rpr, _DOCX_RPR_ORDER, 'w:bCs')
@@ -966,18 +1283,20 @@ def _docx_decorate_paragraph(paragraph, fill=None, accent=None, indent_mm=0.0):
 
 
 def _docx_reset_cell(cell):
-    """Strip the placeholder paragraph so cell content starts flush at the top."""
+    """Strip the default empty paragraph so cell content starts flush at the top."""
     for paragraph in list(cell.paragraphs):
         paragraph._element.getparent().remove(paragraph._element)
     return cell
 
 
 def _docx_add_cell_paragraph(cell, space_after=1.0):
+    """Add a compact paragraph to a table cell."""
     paragraph = cell.add_paragraph()
     return _docx_tight_paragraph(paragraph, space_after=space_after)
 
 
 def _docx_shade_cell(cell, fill):
+    """Apply background shading color to a table cell."""
     tcpr = cell._element.get_or_add_tcPr()
     _docx_set_child(tcpr, _DOCX_TCPR_ORDER, 'w:shd', _docx_shading(fill))
     return cell
@@ -1059,7 +1378,8 @@ def _docx_fixed_layout(table, widths_mm):
 
 
 def _docx_apply_row_widths(row, widths_mm):
-    """Stamp column widths onto a freshly added row.
+    """
+    Stamp column widths onto a freshly added row.
 
     Table.add_row() copies an even split of the original table width onto each new cell,
     which overrides the fixed grid and leaves ragged columns down the page.
@@ -1165,8 +1485,13 @@ def _docx_add_section_row(table, label, widths_mm):
     return row
 
 
+# ==============================================================================
+# WORD DOCUMENT BUILDER & CODEBOOK TABLE GENERATION
+# ==============================================================================
+
 def build_codebook_docx(parser, language='Default'):
-    """Build an editable DOCX codebook from the parsed XLSForm, mirroring the HTML layout.
+    """
+    Build an editable DOCX codebook from the parsed XLSForm, mirroring the HTML layout.
 
     Reads the same parsed survey rows and choice lists as build_codebook_html, so the
     Word file, the HTML file, and the PDF stay in step without a conversion round trip.
@@ -1278,6 +1603,10 @@ def generate_docx(parser, docx_path, language='Default'):
     return docx_path
 
 
+# ==============================================================================
+# PDF RENDERING ENGINE (PLAYWRIGHT CHROMIUM)
+# ==============================================================================
+
 async def generate_pdf(html_path, pdf_path):
     """Render HTML codebook to landscape A4 PDF via Playwright Chromium."""
     async with async_playwright() as p:
@@ -1293,6 +1622,11 @@ async def generate_pdf(html_path, pdf_path):
             print_background=True
         )
         await browser.close()
+
+
+# ==============================================================================
+# PIPELINE ORCHESTRATION & CLI ENTRY POINT
+# ==============================================================================
 
 def process_xlsform(excel_path, target_lang=None, generate_pdf_flag=True, generate_docx_flag=True):
     """Process a single XLSForm spreadsheet and generate HTML, PDF, and DOCX codebooks."""
@@ -1336,7 +1670,9 @@ def process_xlsform(excel_path, target_lang=None, generate_pdf_flag=True, genera
             generate_docx(parser, out_docx_name, language=lang)
             print(f"    Saved DOCX: {out_docx_name}")
 
+
 def main():
+    """Parse CLI arguments and run codebook generator pipeline."""
     parser = argparse.ArgumentParser(description="Direct XLSForm to Printable Codebook, PDF & DOCX Generator")
     parser.add_argument('--input', '-i', help="Path to input XLSForm (.xlsx) file")
     parser.add_argument('--dir', '-d', help="Directory containing XLSForm files")
@@ -1366,6 +1702,7 @@ def main():
         xlsx_files = [os.path.join(args.dir, f) for f in os.listdir(args.dir) if f.endswith('.xlsx') and not f.startswith('~$')]
         for f in xlsx_files:
             process_xlsform(f, **options)
+
 
 if __name__ == '__main__':
     main()

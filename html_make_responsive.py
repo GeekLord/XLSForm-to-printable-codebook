@@ -1,8 +1,26 @@
+"""
+html_make_responsive.py - SurveyCTO Codebook HTML Post-Processor & PDF Generator
+
+A legacy post-processing utility designed to transform default, rigid SurveyCTO
+HTML codebook exports into mobile-responsive, print-ready documents and landscape PDFs.
+
+Core Functions:
+- Strips hardcoded inline width styles (e.g. `width: 1000px`) and injects responsive container classes.
+- Normalizes section header inline colors (`#707070`, `#8c8c8c`) into theme-managed dark header bands (`#2B2D42`).
+- Wraps tables inside `.table-responsive` viewports to prevent horizontal overflow on smaller screens.
+- Resolves nested choice table width clipping (`width: 100%` on table cells).
+- Injects print stylesheets tuned for landscape A4 output.
+- Renders pixel-accurate landscape PDFs using Playwright Chromium.
+"""
+
 import os
 import asyncio
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
+# ==============================================================================
+# CSS & PRINT STYLES
+# ==============================================================================
 # Responsive + Print-optimized styles for SurveyCTO codebook
 RESPONSIVE_STYLES = """
 .spacer {
@@ -305,11 +323,41 @@ img.choicePrompt {
 """
 
 
+# ==============================================================================
+# DOM MANIPULATION & RESPONSIVE CONVERSION
+# ==============================================================================
+
 def make_html_responsive(html_content):
-    """Add responsive CSS and structure to codebook HTML."""
+    """
+    Transform raw SurveyCTO HTML exports into responsive, print-ready documents.
+
+    SurveyCTO's native codebook exports come with rigid styling limitations:
+      1. Fixed-width wrappers (e.g., <div style="width: 1000px">) causing horizontal
+         scrolling on tablets and mobile screens.
+      2. Dark gray section header cells with inline styles (#707070, #8c8c8c, rgb(112, ...))
+         that create poor contrast and clash with print styles.
+      3. Missing viewport meta tags required for modern mobile scaling.
+      4. Naked tables lacking responsive scroll wrappers.
+      5. Nested choice tables with 'width: 100%' inline styles that overflow their cells.
+
+    This function parses the HTML via BeautifulSoup, sanitizes inline styles, injects
+    modern responsive CSS, wraps tables in scroll containers, and normalizes choice cells.
+
+    Args:
+        html_content (str): The raw HTML string exported from SurveyCTO.
+
+    Returns:
+        str: Transformed HTML string with injected responsive styles and markup.
+    """
     soup = BeautifulSoup(html_content, 'html.parser')
     
-    # Remove problematic inline styles from section headers BEFORE adding CSS
+    # --------------------------------------------------------------------------
+    # Step 1: Strip Problematic Inline Header Colors
+    # --------------------------------------------------------------------------
+    # SurveyCTO embeds hardcoded inline styles on group/section header <td> tags
+    # (#707070, #8c8c8c, rgb(112, 112, 112), etc.). We strip 'background-color' and
+    # 'color' from these tags and attach the semantic CSS class 'section-header-dark'
+    # so the new stylesheet can control contrast cleanly across screen and print media.
     for td in soup.find_all('td', style=True):
         style = td.get('style', '')
         style_lower = style.lower()
@@ -322,6 +370,7 @@ def make_html_responsive(html_content):
                 if not part_stripped:
                     continue
                 prop_name = part_stripped.split(':')[0].strip().lower()
+                # Remove hardcoded color properties
                 if prop_name == 'background-color' or prop_name == 'color':
                     continue
                 new_styles.append(part_stripped)
@@ -331,6 +380,9 @@ def make_html_responsive(html_content):
                 del td['style']
             td['class'] = td.get('class', []) + ['section-header-dark']
     
+    # --------------------------------------------------------------------------
+    # Step 2: Ensure <head> and Mobile Viewport Meta Tag Exist
+    # --------------------------------------------------------------------------
     head = soup.find('head')
     if not head:
         head = soup.new_tag('head')
@@ -344,6 +396,9 @@ def make_html_responsive(html_content):
         })
         head.insert(0, viewport)
     
+    # --------------------------------------------------------------------------
+    # Step 3: Inject Modern Responsive Stylesheet
+    # --------------------------------------------------------------------------
     style_tag = head.find('style')
     if style_tag:
         style_tag.string = RESPONSIVE_STYLES
@@ -352,11 +407,21 @@ def make_html_responsive(html_content):
         style_tag.string = RESPONSIVE_STYLES
         head.append(style_tag)
     
+    # --------------------------------------------------------------------------
+    # Step 4: Unconstrain Fixed-Width Containers
+    # --------------------------------------------------------------------------
+    # SurveyCTO wraps the entire codebook table in <div style="width: 1000px">.
+    # Convert this to our flexible .codebook-container class.
     container = soup.find('div', style=lambda x: x and 'width: 1000px' in str(x))
     if container:
         container['class'] = 'codebook-container'
         del container['style']
     
+    # --------------------------------------------------------------------------
+    # Step 5: Wrap Main Table in Responsive Overflow Wrapper
+    # --------------------------------------------------------------------------
+    # On mobile viewports, large multi-column tables cause document horizontal blowout.
+    # Wrapping the table in a .table-responsive div enables smooth horizontal scrolling.
     main_table = soup.find('table', class_='table')
     if main_table:
         parent = main_table.parent
@@ -364,11 +429,15 @@ def make_html_responsive(html_content):
             wrapper = soup.new_tag('div', class_='table-responsive')
             main_table.wrap(wrapper)
             
-    # Fix nested choice cell width overflow
+    # --------------------------------------------------------------------------
+    # Step 6: Fix Choice Cell Width Overflow
+    # --------------------------------------------------------------------------
+    # Nested choice tables often specify 'width: 100%' alongside fixed padding,
+    # causing the third column to exceed the table boundary in Chromium/WebKit.
     for td in soup.find_all('td', style=True):
         style = td.get('style', '')
         if 'width: 100%' in style and 'padding-left: 3px' in style and 'padding-right: 3px' in style:
-            # Replace width: 100% to prevent nested table overflow
+            # Strip width: 100% and add a subtle left border to delineate choice options
             new_style = style.replace('width: 100%;', '').replace('width:100%;', '').replace('width: 100%', '').strip()
             if 'border-left' not in new_style:
                 new_style = new_style.rstrip(';') + '; border-left: 1px solid #ddd;'
@@ -376,19 +445,40 @@ def make_html_responsive(html_content):
     
     return str(soup)
 
+
+# ==============================================================================
+# PLAYWRIGHT CHROMIUM PDF GENERATOR
+# ==============================================================================
+
 async def generate_pdf(html_path, pdf_path):
-    """Generate PDF from HTML using Playwright."""
+    """
+    Render an HTML codebook to a landscape A4 PDF using headless Chromium.
+
+    Uses Playwright to spin up a headless browser instance, loads the local file,
+    waits for network and web fonts to settle, and renders the PDF with full
+    background graphics enabled.
+
+    Args:
+        html_path (str): Absolute or relative filesystem path to the HTML source.
+        pdf_path (str): Destination filesystem path for the rendered PDF file.
+
+    Returns:
+        str: The path of the generated PDF file.
+    """
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         page = await browser.new_page()
         
-        # Load HTML file
+        # Load local HTML file and wait for all DOM assets to finish loading
         await page.goto(f'file:///{html_path}', wait_until='networkidle')
         
-        # Wait for fonts to load
+        # Buffer delay to ensure complex scripts (e.g. Indic/Devanagari fonts)
+        # and CSS layout calculations settle before print rasterization
         await page.wait_for_timeout(1000)
         
-        # Generate PDF in landscape A4
+        # Generate PDF in Landscape A4 format:
+        # - print_background=True preserves table zebra striping and header colors.
+        # - 10mm uniform margins provide balanced printable area.
         await page.pdf(
             path=pdf_path,
             format='A4',
@@ -400,8 +490,21 @@ async def generate_pdf(html_path, pdf_path):
         await browser.close()
         return pdf_path
 
+
+# ==============================================================================
+# DIRECTORY BATCH PROCESSOR & CLI ENTRYPOINT
+# ==============================================================================
+
 def process_directory():
-    """Process all HTML files and generate PDFs."""
+    """
+    Batch-process all HTML codebook files in the current working directory.
+
+    For each '*.html' file discovered:
+      1. Reads raw HTML content.
+      2. Applies make_html_responsive() transformations.
+      3. Overwrites the HTML file in-place with the responsive markup.
+      4. Triggers Playwright via asyncio to compile a matching '*.pdf' document.
+    """
     current_dir = os.getcwd()
     html_files = [f for f in os.listdir(current_dir) if f.endswith('.html')]
     
@@ -422,13 +525,13 @@ def process_directory():
             
             responsive_content = make_html_responsive(content)
             
-            # Save responsive HTML
+            # Save responsive HTML in-place
             with open(file_path, 'w', encoding='utf-8') as file:
                 file.write(responsive_content)
             
             print(f"  Made responsive!")
             
-            # Generate PDF
+            # Generate companion PDF file
             pdf_filename = filename.replace('.html', '.pdf')
             pdf_path = os.path.join(current_dir, pdf_filename)
             
@@ -438,6 +541,7 @@ def process_directory():
             
         except Exception as e:
             print(f"  Error: {str(e)}")
+
 
 if __name__ == "__main__":
     process_directory()

@@ -1,10 +1,44 @@
+"""
+html_make_responsive_print.py
+=============================
+SurveyCTO HTML Table to Print-Optimized Questionnaire Formatter.
+
+Purpose:
+  SurveyCTO HTML codebook exports structure surveys as wide, multi-column HTML tables.
+  When printed or exported to paper/PDF, wide tables often split awkwardly across pages,
+  clip text, or leave huge blank gaps.
+
+  This utility transforms tabular SurveyCTO HTML exports into a clean, vertical
+  questionnaire layout (card/block format):
+    1. DOM Restructuring: Recursively converts <table> elements into semantic card
+       containers (<div class="question-item">).
+    2. Column Decomposition:
+       - Column 1 (Variable/Field Name) -> Header badge (<div class="field-label">).
+       - Column 2 (Question Prompt/Relevance) -> Prominent text block (<div class="question-text">).
+       - Column 3 (Choices/Answers) -> Choice list with checkboxes or lined fill-in answer areas.
+    3. Section Headers: Detects group rows and converts them into full-width dividing bars.
+    4. Print-Optimized Styling: Injects an A4 portrait CSS stylesheet with strict
+       page-break avoidance rules (page-break-inside: avoid) on questions and choices,
+       notebook-style ruled answer lines, and dual-mode styling (screen shadow preview vs.
+       clean print graphics).
+
+Usage:
+  Run directly in a folder containing SurveyCTO HTML exports:
+      python html_make_responsive_print.py
+"""
+
 import os
 import re
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
-# Print-optimized CSS for SurveyCTO questionnaire printing
+# ==============================================================================
+# PRINT-OPTIMIZED STYLESHEET
+# ==============================================================================
+# This stylesheet configures portrait A4 pagination, card-based question layouts,
+# ruled writing lines for manual field entry, and page-break management.
 PRINT_STYLES = """
+
 /* ========== PRINT OPTIMIZED CSS FOR SURVEYCTO ========== */
 *, *::before, *::after {
     box-sizing: border-box;
@@ -304,7 +338,9 @@ img.choicePrompt {
 }
 """
 
-# Minimal base styles
+# ==============================================================================
+# BASE UTILITY STYLES
+# ==============================================================================
 BASE_STYLES = """
 .text-left { text-align: left; }
 .text-right { text-align: right; }
@@ -313,8 +349,23 @@ BASE_STYLES = """
 """
 
 
+# ==============================================================================
+# DOM TEXT & ELEMENT EXTRACTION HELPERS
+# ==============================================================================
+
 def extract_text_content(element):
-    """Extract text content from element, handling nested elements."""
+    """
+    Safely extract clean text from a BeautifulSoup element or string.
+
+    Handles None, raw strings, and Tag instances with nested children, stripping
+    leading and trailing whitespace.
+
+    Args:
+        element (bs4.element.Tag | str | None): The DOM element or text node.
+
+    Returns:
+        str: Cleaned text content, or an empty string if element is None.
+    """
     if element is None:
         return ""
     if isinstance(element, str):
@@ -323,17 +374,33 @@ def extract_text_content(element):
 
 
 def parse_cell_content(cell, soup):
-    """Parse cell content and return list of elements to append."""
+    """
+    Parse an HTML table cell and extract structured content while preserving formatting.
+
+    Traverses direct children of a table cell, converting block and inline elements:
+      - '<p>' tags become '<div class="question-paragraph">' to avoid conflicting margin collapsing.
+      - '<span>' text is stripped and extracted.
+      - '<br>' tags are retained for intentional linebreaks in questionnaire prompts.
+      - '<img>' tags (e.g. SurveyCTO survey logos or item icons) are preserved.
+      - '<strong>' / '<b>' and '<em>' / '<i>' tags are normalized.
+
+    Args:
+        cell (bs4.element.Tag): The <td> or <th> element to parse.
+        soup (bs4.BeautifulSoup): The root BeautifulSoup instance used for creating new tags.
+
+    Returns:
+        list: List of parsed text strings and BeautifulSoup Tag elements ready to be appended.
+    """
     content = []
     
-    # Process all children
+    # Process all children preserving semantic meaning
     for child in cell.children:
         if isinstance(child, str):
             text = child.strip()
             if text:
                 content.append(text)
         elif child.name:
-            # Handle specific elements
+            # Handle specific formatting elements
             if child.name == 'p':
                 p = soup.new_tag('div')
                 p['class'] = 'question-paragraph'
@@ -354,7 +421,7 @@ def parse_cell_content(cell, soup):
                 em.string = child.get_text(strip=True)
                 content.append(em)
             else:
-                # For other elements, just get text
+                # Fallback for arbitrary inline elements
                 text = child.get_text(strip=True)
                 if text:
                     content.append(text)
@@ -362,18 +429,42 @@ def parse_cell_content(cell, soup):
     return content
 
 
+
+# ==============================================================================
+# TABLE TO QUESTIONNAIRE CARD TRANSFORMER
+# ==============================================================================
+
 def table_to_questionnaire(soup, table):
     """
-    Convert SurveyCTO table structure to print-optimized questionnaire format.
+    Convert a SurveyCTO HTML table structure into a print-optimized questionnaire card flow.
+
+    SurveyCTO renders survey forms as rigid HTML tables where each row is a question or section.
+    This function decomposes the table rows (<tr>) into modular, vertical card containers:
+      - Section Headers: Single-cell rows with colspan="3" or dark background colors become
+        full-width section dividers (<div class="question-item section-header">).
+      - 3-Column Question Rows:
+          * Cell 0 (Variable/Field Name) -> Top badge (<div class="field-label">)
+          * Cell 1 (Question Prompt & Relevance) -> Formatted prompt (<div class="question-text">)
+          * Cell 2 (Choices / Answers) -> Nested table parsed into choice items (<div class="choice-item">)
+            or an empty notebook-style fill-in line block (<div class="answer-placeholder">).
+      - 2-Column Rows: Rendered as compact Field / Value pairs.
+      - 1-Column Rows: Rendered as highlighted notes (<div class="note-cell">).
+
+    Args:
+        soup (bs4.BeautifulSoup): Root BeautifulSoup instance used for creating replacement tags.
+        table (bs4.element.Tag): The HTML <table> element to transform.
+
+    Returns:
+        bs4.element.Tag: A <div> container enclosing the transformed questionnaire cards.
     """
     container = soup.new_tag('div')
     
-    # Get all rows
+    # Extract all rows from the table
     rows = table.find_all('tr')
     if not rows:
         return container
     
-    # Check for thead to get headers
+    # Check for <thead> to extract column headers if present
     thead = table.find('thead')
     headers = []
     if thead:
@@ -381,11 +472,11 @@ def table_to_questionnaire(soup, table):
         if header_row:
             headers = [th.get_text(strip=True) for th in header_row.find_all(['th', 'td'])]
     
-    # Determine number of columns from first row
+    # Determine the number of columns from the first data row
     first_cells = rows[0].find_all(['td', 'th'])
     num_cols = len(first_cells)
     
-    # Skip header row in data rows if thead exists
+    # If thead was present, skip the header row from row iteration
     data_rows = rows[1:] if thead else rows
     
     for row in data_rows:
@@ -393,7 +484,11 @@ def table_to_questionnaire(soup, table):
         if not cells:
             continue
         
-        # Check if this is a section header row (single cell with colspan or gray background)
+        # ----------------------------------------------------------------------
+        # Case 1: Section Header Row
+        # ----------------------------------------------------------------------
+        # SurveyCTO marks section breaks with a single <td> spanning all columns (colspan=3)
+        # or having a hardcoded background-color.
         is_section_header = False
         if len(cells) == 1:
             cell = cells[0]
@@ -401,25 +496,25 @@ def table_to_questionnaire(soup, table):
                 is_section_header = True
         
         if is_section_header:
-            # Create section header
             section = soup.new_tag('div')
             section['class'] = 'question-item section-header'
             section.string = cells[0].get_text(strip=True)
             container.append(section)
             continue
         
-        # Regular question row
+        # ----------------------------------------------------------------------
+        # Case 2: Standard Question Card
+        # ----------------------------------------------------------------------
         question_item = soup.new_tag('div')
         question_item['class'] = 'question-item'
         
-        # Extract field, question, answer based on column structure
+        # Subcase A: Standard 3-Column Layout [Field Name | Prompt | Choices/Answer]
         if num_cols >= 3:
-            # Standard Field/Question/Answer layout
             field_cell = cells[0] if len(cells) > 0 else None
             question_cell = cells[1] if len(cells) > 1 else None
             answer_cell = cells[2] if len(cells) > 2 else None
             
-            # Field label
+            # 1. Field Label Badge (Variable Name)
             if field_cell:
                 field_text = field_cell.get_text(strip=True)
                 if field_text:
@@ -428,12 +523,12 @@ def table_to_questionnaire(soup, table):
                     field_label.string = field_text
                     question_item.append(field_label)
             
-            # Question text
+            # 2. Question Text Block
             if question_cell:
                 question_text = soup.new_tag('div')
                 question_text['class'] = 'question-text'
                 
-                # Parse question content
+                # Parse rich formatting (paragraphs, bold, linebreaks, images)
                 content = parse_cell_content(question_cell, soup)
                 for item in content:
                     if isinstance(item, str):
@@ -443,15 +538,15 @@ def table_to_questionnaire(soup, table):
                 
                 question_item.append(question_text)
             
-            # Answer area
+            # 3. Answer Area (Choices or Hand-Filling Placeholder)
             answer_area = soup.new_tag('div')
             answer_area['class'] = 'answer-area'
             
             if answer_cell:
-                # Check for nested table (choices/options)
+                # Check if this question has a nested choices table (select_one, select_multiple)
                 nested_table = answer_cell.find('table')
                 if nested_table:
-                    # Convert nested table to choice list
+                    # Deconstruct nested choice rows into a vertical choice list
                     choice_list = soup.new_tag('div')
                     choice_list['class'] = 'choice-list'
                     
@@ -462,14 +557,14 @@ def table_to_questionnaire(soup, table):
                             choice_item = soup.new_tag('div')
                             choice_item['class'] = 'choice-item'
                             
-                            # Choice number
+                            # Choice Number/Code Badge
                             choice_num = soup.new_tag('span')
                             choice_num['class'] = 'choice-number'
                             choice_num_text = choice_cells[1].get_text(strip=True) if len(choice_cells) > 1 else ''
                             choice_num.string = choice_num_text
                             choice_item.append(choice_num)
                             
-                            # Choice text
+                            # Choice Label Text
                             choice_text = soup.new_tag('span')
                             choice_text['class'] = 'choice-text'
                             choice_text_content = choice_cells[2].get_text(strip=True) if len(choice_cells) > 2 else ''
@@ -480,20 +575,19 @@ def table_to_questionnaire(soup, table):
                     
                     answer_area.append(choice_list)
                 else:
-                    # Empty answer area with placeholder
+                    # Non-choice questions (text, integer, decimal): render ruled writing lines
                     placeholder = soup.new_tag('div')
                     placeholder['class'] = 'answer-placeholder'
                     answer_area.append(placeholder)
             else:
-                # Empty answer area
                 placeholder = soup.new_tag('div')
                 placeholder['class'] = 'answer-placeholder'
                 answer_area.append(placeholder)
             
             question_item.append(answer_area)
             
+        # Subcase B: 2-Column Layout [Field Name | Value]
         elif num_cols == 2:
-            # Simple label/value format
             field_cell = cells[0]
             value_cell = cells[1] if len(cells) > 1 else None
             
@@ -508,8 +602,8 @@ def table_to_questionnaire(soup, table):
                 value_div.string = value_cell.get_text(strip=True)
                 question_item.append(value_div)
         
+        # Subcase C: 1-Column Layout [Note / Instruction]
         elif num_cols == 1:
-            # Single cell - treat as note or simple content
             content_text = cells[0].get_text(strip=True)
             if content_text:
                 note_div = soup.new_tag('div')
@@ -522,8 +616,21 @@ def table_to_questionnaire(soup, table):
     return container
 
 
+# ==============================================================================
+# NESTED TABLE RESOLUTION
+# ==============================================================================
+
 def convert_nested_tables(soup, element):
-    """Recursively convert nested tables."""
+    """
+    Recursively find and transform nested HTML tables into questionnaire cards.
+
+    Performs a bottom-up depth-first conversion so that innermost choice tables
+    are transformed before parent wrapper tables are parsed.
+
+    Args:
+        soup (bs4.BeautifulSoup): Root BeautifulSoup instance.
+        element (bs4.element.Tag): The parent DOM container to search.
+    """
     tables = element.find_all('table', recursive=False)
     for table in tables:
         convert_nested_tables(soup, table)
@@ -531,43 +638,72 @@ def convert_nested_tables(soup, element):
         table.replace_with(questionnaire_div)
 
 
+# ==============================================================================
+# DOCUMENT-LEVEL HTML RESPONSIVE & PRINT CONVERSION
+# ==============================================================================
+
 def make_html_responsive(html_content):
-    """Transform HTML to print-optimized questionnaire format."""
+    """
+    Transform a complete SurveyCTO HTML document into a print-ready questionnaire.
+
+    Orchestrates the full pipeline:
+      1. Head Configuration: Removes legacy stylesheets and injects PRINT_STYLES and BASE_STYLES.
+      2. Container Reset: Converts fixed-width container divs (<div style="width: ...">)
+         into flexible <div class="questionnaire-container"> containers.
+      3. Table Transformation: Converts the primary survey table (and any subsidiary tables)
+         into sequential card items.
+      4. Header Prominence: Promotes generic <h4> survey titles into prominent
+         <div class="qn-header"><h1>...</h1></div> headers.
+
+    Args:
+        html_content (str): The raw SurveyCTO HTML document content.
+
+    Returns:
+        str: Transformed HTML document string.
+    """
     soup = BeautifulSoup(html_content, 'html.parser')
     
-    # Add viewport meta for screen preview
+    # --------------------------------------------------------------------------
+    # Step 1: Head Configuration & Style Injection
+    # --------------------------------------------------------------------------
     head = soup.find('head')
     if head:
-        # Clear existing styles and add print-optimized CSS
+        # Clear existing SurveyCTO inline styles to avoid specificity conflicts
         style_tags = head.find_all('style')
         for style in style_tags:
             style.extract()
         
+        # Inject print and screen stylesheets
         new_style = soup.new_tag('style')
         new_style.string = BASE_STYLES + PRINT_STYLES
         head.append(new_style)
     
-    # Find main container div
+    # --------------------------------------------------------------------------
+    # Step 2: Unconstrain Container Widths
+    # --------------------------------------------------------------------------
     main_div = soup.find('div', style=lambda x: x and ('width' in str(x).lower()))
     if main_div:
-        # Convert to questionnaire container
         main_div['class'] = 'questionnaire-container'
         if main_div.get('style'):
             del main_div['style']
     
-    # Convert main table to questionnaire format
+    # --------------------------------------------------------------------------
+    # Step 3: Transform Main and Subsidiary Tables
+    # --------------------------------------------------------------------------
     main_table = soup.find('table', class_=lambda x: x and 'table' in str(x))
     if main_table:
         questionnaire_div = table_to_questionnaire(soup, main_table)
         main_table.replace_with(questionnaire_div)
     
-    # Handle any remaining nested tables
+    # Clean up any remaining loose tables
     all_tables = soup.find_all('table')
     for table in all_tables:
         questionnaire_div = table_to_questionnaire(soup, table)
         table.replace_with(questionnaire_div)
     
-    # Make title prominent
+    # --------------------------------------------------------------------------
+    # Step 4: Elevate Survey Title
+    # --------------------------------------------------------------------------
     title = soup.find('h4')
     if title:
         title['class'] = 'qn-header'
@@ -580,8 +716,17 @@ def make_html_responsive(html_content):
     return str(soup)
 
 
+# ==============================================================================
+# DIRECTORY BATCH PROCESSOR & CLI ENTRYPOINT
+# ==============================================================================
+
 def process_directory():
-    """Process all HTML files in the current directory."""
+    """
+    Batch-process all HTML codebook files in the current working directory.
+
+    Finds all files matching '*.html' or '*.htm', applies the print questionnaire
+    transformation, and saves the updated content in-place.
+    """
     current_dir = os.getcwd()
     html_files = [f for f in os.listdir(current_dir) if f.endswith('.html') or f.endswith('.htm')]
     
@@ -596,14 +741,14 @@ def process_directory():
         print(f"\nProcessing {filename}...")
         
         try:
-            # Read the file
+            # Read raw HTML file
             with open(file_path, 'r', encoding='utf-8') as file:
                 content = file.read()
             
-            # Transform to print-optimized format
+            # Transform to print-optimized questionnaire layout
             responsive_content = make_html_responsive(content)
             
-            # Write the modified content back
+            # Write modified content back in-place
             with open(file_path, 'w', encoding='utf-8') as file:
                 file.write(responsive_content)
             
@@ -617,3 +762,4 @@ def process_directory():
 
 if __name__ == "__main__":
     process_directory()
+
