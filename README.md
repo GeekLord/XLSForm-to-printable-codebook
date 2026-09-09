@@ -1,150 +1,155 @@
 # XLSForm to printable codebook and questionnaire
 
-Print your survey before you field it. Point `xlsform_to_printable.py` at an XLSForm `.xlsx` file and you get a responsive HTML codebook, an A4 landscape PDF, and an editable Word `.docx` for every language in the form, without uploading anything to a server. For an enumerator-facing or respondent-facing survey ready for paper administration, `Questionnaire/xlsform_to_questionnaire.py` produces a clean, table-free printable interview questionnaire.
+Print your survey before you field it. Point `xlsform_to_printable.py` at an XLSForm `.xlsx` file to generate a responsive HTML codebook, an A4 landscape PDF, and an editable Word `.docx` for every language in the form, without uploading files to an external server. For an enumerator-facing or respondent-facing survey ready for paper administration, `Questionnaire/xlsform_to_questionnaire.py` produces a clean, table-free printable interview questionnaire.
 
-That server round trip is the whole reason this exists. The old way to get a paper copy of an ODK, SurveyCTO, or KoboToolbox form was to upload the spreadsheet, export the platform's printable HTML, then run a post-processing script over it to make the tables usable on paper. Two of those scripts still live here (`html_make_responsive.py` and `html_make_responsive_print.py`) and still work on exported HTML. The direct converters skip the upload and read the `survey`, `choices`, and `settings` sheets directly.
+Direct conversion eliminates the server round trip. Older workflows required uploading the spreadsheet to ODK, SurveyCTO, or KoboToolbox, exporting the platform's default printable HTML, and running post-processing scripts to make tables readable on paper. Two post-processing scripts (`html_make_responsive.py` and `html_make_responsive_print.py`) remain available for exported HTML. The primary converters skip the server step and parse the `survey`, `choices`, and `settings` sheets directly.
 
-## Codebook vs. Questionnaire
+## Codebook versus questionnaire
 
-| Feature | Codebook (`xlsform_to_printable.py`) | Interview Questionnaire (`Questionnaire/xlsform_to_questionnaire.py`) |
+| Feature | Codebook (`xlsform_to_printable.py`) | Interview questionnaire (`Questionnaire/xlsform_to_questionnaire.py`) |
 | --- | --- | --- |
-| Primary audience | Data managers, research PIs, programmers, M&E officers | Field enumerators, survey respondents, IRB review boards, training sessions |
-| Document layout | 3-column fixed table (Field 22%, Question 50%, Answer 28%) | Table-free flowing document with question prompts, notes, choices, and blanks |
-| Default page setup | A4 landscape (10mm margins) | A4 portrait (15mm top/bottom, 12mm/16mm margins; `--landscape` optional) |
-| Variable names & logic | Variable names, required flags, calculation badges, formulas, and relevance rules | Omitted; presents only human-readable question text and instructions |
-| Choice lists | Choice values (codes) paired with labels in a nested table | Radio `( )` or checkbox `[ ]` markers with labels only; raw codes hidden |
+| Primary audience | Data managers, research PIs, programmers, and M&E officers | Field enumerators, respondents, review boards, and training sessions |
+| Document layout | 3-column fixed table (Field 22%, Question 50%, Answer 28%) | Flowing document without tables, using question prompts, notes, choices, and blanks |
+| Default page setup | A4 landscape (10mm margins) | A4 portrait (15mm top and bottom, 12mm and 16mm margins; `--landscape` optional) |
+| Variable names and logic | Variable names, required flags, calculation badges, formulas, and relevance rules | Omitted; presents only human-readable question text and instructions |
+| Choice lists | Choice values paired with labels in a nested table | Radio `( )` or checkbox `[ ]` markers with labels only; raw codes hidden |
 | Open-ended inputs | Empty answer cell (data type shown in Field column) | Tailored handwriting blanks (ruled lines, date/time formats, numeric brackets) |
 | Notes (`note` type) | Standard table row with note text in Question column | Full-width callout box with a blue accent bar for scripts and consent forms |
-| Calculations & metadata | Fully documented with plain-language explanations and badges | Excluded completely |
+| Calculations and metadata | Documented with plain-language explanations and badges | Excluded completely |
 | Output formats | Responsive HTML, landscape PDF, editable Word `.docx` | Responsive HTML, portrait/landscape PDF, editable Word `.docx` |
 
 ## Setup
 
-Python 3.8 or newer, then:
+Python 3.8 or newer:
 
 ```bash
 pip install -r requirements.txt
 playwright install chromium
 ```
 
-Chromium is only needed for PDF rendering. If you pass `--no-pdf`, you can skip it. `python-docx` is only needed for the Word file, and both scripts say so and carry on with HTML and PDF if the import fails, so `--no-docx` runs fine without it.
+Chromium is required only for PDF generation. Pass `--no-pdf` to run without it. `python-docx` is required only for Word output; if the package is missing, both scripts print a notice and generate HTML and PDF. Pass `--no-docx` to disable Word file generation explicitly.
 
 ## Usage
 
 ### Generating codebooks (xlsform_to_printable.py)
 
-Every language in the form, HTML, PDF, and DOCX:
+Process every language in the form into HTML, PDF, and DOCX:
 
 ```bash
-python xlsform_to_printable.py --input "Brick Kiln Literacy RCT - Household Survey.xlsx"
+python xlsform_to_printable.py --input "Pradhan Qualitative Survey 2026.xlsx"
 ```
 
-One language only. The match is a case-insensitive substring, so `Odia` matches the `Odia (or)` column:
+Generate a single language using a case-insensitive substring match (for example, `Hindi` matches the `label::Hindi (hi)` column):
 
 ```bash
-python xlsform_to_printable.py --input "Brick Kiln Literacy RCT - Household Survey.xlsx" --lang Odia
+python xlsform_to_printable.py --input "Pradhan Qualitative Survey 2026.xlsx" --lang Hindi
 ```
 
-Every `.xlsx` in a folder, skipping Excel lock files:
+Process every `.xlsx` file in a folder, skipping temporary Excel lock files:
 
 ```bash
 python xlsform_to_printable.py --dir /path/to/forms/
 ```
 
-HTML and DOCX only, no browser needed:
+Generate HTML and DOCX without rendering PDFs:
 
 ```bash
-python xlsform_to_printable.py --input form.xlsx --no-pdf
+python xlsform_to_printable.py --input "Pradhan Qualitative Survey 2026.xlsx" --no-pdf
 ```
 
-Skip the Word file and keep the print-ready PDF:
+Generate HTML and PDF without writing Word files:
 
 ```bash
-python xlsform_to_printable.py --input form.xlsx --no-docx
+python xlsform_to_printable.py --input "Pradhan Qualitative Survey 2026.xlsx" --no-docx
 ```
 
-With no `--input` and no `--dir`, the script processes every `.xlsx` in the current working directory.
+When run without `--input` or `--dir`, the script processes every `.xlsx` file in the current working directory.
 
 ### Generating interview questionnaires (Questionnaire/xlsform_to_questionnaire.py)
 
-Every language in the form, HTML, portrait PDF, and portrait DOCX:
+Process every language in the form into HTML, portrait PDF, and portrait DOCX:
 
 ```bash
-python Questionnaire/xlsform_to_questionnaire.py --input "Brick Kiln Literacy RCT - Household Survey.xlsx"
+python Questionnaire/xlsform_to_questionnaire.py --input "Pradhan Qualitative Survey 2026.xlsx"
 ```
 
-One language only (case-insensitive substring match):
+Generate a single language:
 
 ```bash
-python Questionnaire/xlsform_to_questionnaire.py --input "Brick Kiln Literacy RCT - Household Survey.xlsx" --lang English
+python Questionnaire/xlsform_to_questionnaire.py --input "Pradhan Qualitative Survey 2026.xlsx" --lang English
 ```
 
-Render in A4 landscape instead of default portrait:
+Render in A4 landscape instead of the default portrait layout:
 
 ```bash
-python Questionnaire/xlsform_to_questionnaire.py --input form.xlsx --landscape
+python Questionnaire/xlsform_to_questionnaire.py --input "Pradhan Qualitative Survey 2026.xlsx" --landscape
 ```
 
-Every `.xlsx` in a folder, skipping Excel lock files:
+Process every `.xlsx` file in a directory:
 
 ```bash
 python Questionnaire/xlsform_to_questionnaire.py --dir /path/to/forms/
 ```
 
-HTML and DOCX only (skip Playwright/PDF rendering):
+Skip PDF rendering:
 
 ```bash
-python Questionnaire/xlsform_to_questionnaire.py --input form.xlsx --no-pdf
+python Questionnaire/xlsform_to_questionnaire.py --input "Pradhan Qualitative Survey 2026.xlsx" --no-pdf
 ```
 
-Skip DOCX generation and keep HTML and PDF:
+Skip DOCX generation:
 
 ```bash
-python Questionnaire/xlsform_to_questionnaire.py --input form.xlsx --no-docx
+python Questionnaire/xlsform_to_questionnaire.py --input "Pradhan Qualitative Survey 2026.xlsx" --no-docx
 ```
 
-With no `--input` and no `--dir`, the script processes every `.xlsx` in the current working directory. Output files sit next to the source spreadsheet and take the language name as a suffix: `<form>_<Language>.html`, `<form>_<Language>.pdf`, and `<form>_<Language>.docx`.
+Outputs are saved in the same directory as the source spreadsheet, using the language name as a suffix: `<form>_<Language>.html`, `<form>_<Language>.pdf`, and `<form>_<Language>.docx`.
 
 ## What the codebook looks like
 
-Three columns, fixed width, so a row never blows out the page: Field at 22%, Question at 50%, Answer at 28%.
+Three fixed-width columns prevent rows from expanding off the page: Field at 22%, Question at 50%, and Answer at 28%.
 
-The Field column holds the variable name, with a red `(required)` marker when the `required` column says yes, 1, true, ok, or required.
+The Field column displays the variable name, tagged with a red `(required)` indicator when the `required` column is set to yes, 1, true, ok, or required.
 
-The Question column stacks whatever applies to the row, in this order:
+The Question column presents row information in top-to-bottom order:
+- The localized question label.
+- A metadata note when the row represents an automatic platform variable like `start` or `deviceid`.
+- A calculation badge classifying the formula, followed by the formula trimmed to 65 characters. The full expression is preserved in the HTML `title` attribute of the `<code>` element so it remains visible on hover without expanding row height in print.
+- Hint text.
+- Relevance conditions prefixed with `Relevance:`.
 
-- The question label in the target language.
-- A metadata note, if the row's type is a platform variable like `start` or `deviceid`. See the table below for what each one says.
-- A calculation badge naming the formula's category, followed by the formula itself trimmed to 65 characters. The full formula lives in the `title` attribute of the `<code>` element, so it survives in HTML on hover and stays out of the way in print. Left whole, a long `indexed-repeat()` or a nested `if()` stretches its row five or six lines deep.
-- The hint text.
-- The relevance expression, prefixed with `Relevance:`.
+The Answer column contains a nested two-column table for `select_one`, `select_multiple`, and `select_or_other` fields: a 32px code cell on the left and the choice label wrapping on the right. Choice lookups against the `choices` sheet are case-insensitive, and choices without labels display their raw value. External file choices leave this cell empty because option rows do not live in the workbook.
 
-The Answer column holds a nested two-column table for `select_one`, `select_multiple`, and `select_or_other` fields: a 32px code cell on the left, the choice label wrapping freely on the right. The choice list lookup is case-insensitive against the `choices` sheet, and a choice with no label falls back to its own value. Types that read options from an external file leave the Answer column empty, since those options are not in the sheet.
+`begin group`, `begin_group`, `begin repeat`, and `begin_repeat` rows render as full-width section bands showing the group label or name. Matching closing tags are omitted.
 
-`begin group`, `begin_group`, `begin repeat`, and `begin_repeat` rows become a full-width section band carrying the group label, or the group name when there is no label. The matching end rows are dropped.
-
-`constraint` and `constraint_message` are parsed but not yet rendered.
+`constraint` and `constraint_message` columns are parsed from the sheet but not rendered in the codebook table.
 
 ## What the interview questionnaire looks like
 
-The questionnaire script produces a paper-first, table-free interview document designed for field enumerators, respondents, and ethics reviews:
+The questionnaire generator builds a paper-first interview document designed for field administration and ethics review without table borders:
 
-- Document header banner: Displays the form title from the `settings` sheet (or filename) with an interview language subtitle and divider rule.
-- Section headers: `begin group` and `begin repeat` rows become full-width tinted header bands (`#f0f4f8` with 2px borders) marking survey modules. Closing tags (`end group`, `end repeat`) are dropped.
-- Notes and instructions: `note` rows become full-width callout blocks with a 4px left accent bar (`#3b82f6`) and light tint (`#f8fafc`). These house enumerator instructions, consent statements, and read-aloud introductions without breaking question flow.
-- Questions: Question prompts display in bold text with clean paragraph spacing. Hints are rendered in italic blue text indented below the question (`Note: <hint>`). Technical variable names, required flags, relevance conditions, and constraints are omitted.
-- Multiple-choice questions: `select_one` rows display with radio markers `( )`; `select_multiple` rows display with checkbox markers `[ ]`. Technical choice values (e.g. numeric codes like `1`, `2`, `-99`) are stripped so only the localized choice labels appear.
-- Open-ended response blanks: Non-choice questions display tailored handwriting blanks matching the field's data type, avoiding plain blank lines.
-- Excluded elements: System metadata (`start`, `end`, `deviceid`, `today`, `username`, `email`, `audit`, etc.) and internal calculation rows (`calculate`, `hidden`) are completely excluded from the questionnaire.
+The document header displays the survey title from the `settings` sheet (or the workbook filename), the interview language subtitle, and a divider line.
+
+Section headers from `begin group` and `begin repeat` rows appear as full-width tinted bands (`#f0f4f8` with 2px borders) to mark survey modules. Closing tags (`end group`, `end repeat`) are omitted.
+
+Enumerator instructions, consent statements, and read-aloud prompts from `note` rows become full-width callout boxes with a blue left accent bar (`#3b82f6`) and a light background tint (`#f8fafc`).
+
+Question prompts appear in bold text with standard paragraph spacing. Hints appear in italic blue text indented below the question prompt (`Note: <hint>`). Technical variable names, required flags, relevance conditions, and constraint formulas are omitted.
+
+Multiple-choice questions display radio markers `( )` for `select_one` and checkbox markers `[ ]` for `select_multiple`. Choice values such as `1`, `2`, or `-99` are hidden so only localized choice labels appear.
+
+Open-ended questions provide dedicated handwriting blanks matching the field's data type instead of blank lines.
+
+Platform metadata rows (`start`, `end`, `deviceid`, `today`, `username`, `email`, `audit`) and calculation rows (`calculate`, `hidden`) are omitted from the questionnaire.
 
 ### Response blanks by question type
 
 When rendering open-ended questions in the questionnaire, `xlsform_to_questionnaire.py` provides formatted handwriting blanks corresponding to each XLSForm data type:
 
-| Question Type | Rendered Response Blank | Notes |
+| Question type | Rendered response blank | Notes |
 | --- | --- | --- |
 | `text` (standard) | `____________________________________________________________________` | Single ruled line for short free-text answers |
-| `text` (detailed/notes) | Double ruled line `____________________________________________________________________` | Triggered when variable name or label mentions notes, details, comments, specify, other, explain, or reasons |
+| `text` (detailed/notes) | Double ruled line `____________________________________________________________________` | Triggered when the variable name or label mentions notes, details, comments, specify, other, explain, or reasons |
 | `integer`, `decimal`, `range` | `[ ____________________ ]` | Bracketed blank for numeric values |
 | `date` | `[ ____ / ____ / ________ ] (DD/MM/YYYY)` | Segmented date blank |
 | `time` | `[ ____ : ____ ] (HH:MM)` | Segmented 24-hour time blank |
@@ -156,13 +161,13 @@ When rendering open-ended questions in the questionnaire, `xlsform_to_questionna
 
 ## Languages
 
-The parser reads the header rows of the `survey` and `choices` sheets and collects every `label::` column it finds, so `label::English (en)` and `label::Odia (or)` both become target languages with no configuration. Untagged `label`, `hint`, and `constraint_message` columns are used as the fallback for any language that lacks its own column, and a form with no tagged labels at all is treated as a single `Default` language.
+The parser inspects the header rows in `survey` and `choices` and collects every `label::` column, so headers like `label::Hindi (hi)` and `label::English (en)` become target languages without manual configuration. Untagged `label`, `hint`, and `constraint_message` columns serve as fallbacks for languages lacking dedicated translations. Forms without tagged label columns default to a single `Default` language.
 
-Filename suffixes drop the language code in parentheses, so `label::English (en)` produces `_English.html`, not `_English (en).html`.
+Output filenames drop the parenthetical language code, so `label::Hindi (hi)` produces `_Hindi.html`, not `_Hindi (hi).html`.
 
 ## Platform metadata reference
 
-When a row's type matches one of these, the codebook Question column explains it in plain language instead of leaving the cell blank. (These rows are skipped entirely in the interview questionnaire.)
+When a row type matches an automatic survey platform variable, the codebook Question column provides a plain-language explanation instead of an empty cell. (These rows are omitted from the interview questionnaire.)
 
 | Type | What the codebook says |
 | --- | --- |
@@ -185,7 +190,7 @@ When a row's type matches one of these, the codebook Question column explains it
 
 ## Calculation categories
 
-Formulas are matched against these patterns in order, and the first hit wins. Anything unmatched is labelled plain `Calculation`. (Calculations are skipped entirely in the interview questionnaire.)
+Formulas are matched against these patterns in sequence, and the first matching pattern assigns the category. Unmatched formulas are labelled `Calculation`. (Calculations are omitted from the interview questionnaire.)
 
 | Pattern | Category |
 | --- | --- |
@@ -198,75 +203,75 @@ Formulas are matched against these patterns in order, and the first hit wins. An
 | `substr(`, `concat(`, `string-length(` | String processing |
 | `if(` | Conditional logic |
 
-Order matters here. A formula that wraps `now()` inside `format-date-time()` is tagged as a timestamp capture, because the `now()` test runs first.
+Evaluation order determines classification. For example, a formula that nests `now()` inside `format-date-time()` is categorized as a timestamp capture because the `now()` pattern is evaluated first.
 
-## Print behaviour
+## Print behavior
 
-The screen layout and the print layout come from the same stylesheet in both scripts, with the print rules in a `@media print` block. The DOCX renderers mirror these decisions in Word's own vocabulary; see the section below.
+Screen and print layouts use the same stylesheet in both tools, with print formatting specified in `@media print` blocks. DOCX generators replicate these styling rules in WordprocessingML.
 
-### Codebook print layout (`xlsform_to_printable.py`)
+### Codebook print layout (xlsform_to_printable.py)
 
-- `@page` is A4 landscape with 8mm vertical and 10mm horizontal margins. The Playwright call passes 10mm on all four sides, and that is what the finished PDF uses.
-- `thead` is a `table-header-group`, so the Field, Question, and Answer headers reappear at the top of each page.
-- `page-break-inside: avoid` on rows keeps a question and its choice list together.
-- Section bands and column headers switch from dark navy on screen (`#2b2d42` and `#4a4e69`, white text) to light tints in print (`#f0f4f8` with 1.5pt rules above and below, `#e9ecef` for column headers, black text). Paper gets the same visual hierarchy without a solid bar of toner on every section. Both states set `print-color-adjust: exact` so browsers do not helpfully drop the fills.
-- Type is 9.5pt on 13.5pt in print, and 14px body with 13 to 13.5px cells on screen.
-- Every cell sets `overflow-wrap: break-word` and `word-break: break-word`, so long variable names like `start-geopoint` wrap without a horizontal scrollbar and without splitting one character per line.
-- Screen breakpoints at 768px and 480px shrink the type and let `.table-responsive` scroll sideways rather than crush the columns.
-- The scripts read and write UTF-8 throughout, and the font stack leads with `"Arial Unicode MS"` so Odia, Devanagari, Tamil, and Bengali labels render instead of showing boxes.
+- `@page` specifies A4 landscape with 8mm vertical and 10mm horizontal margins. Playwright sets 10mm margins on all four sides for PDF output.
+- `thead` uses `table-header-group` so Field, Question, and Answer headers repeat at the top of each page.
+- `page-break-inside: avoid` on table rows keeps questions and choice lists on the same page.
+- Section bands and column headers switch from dark navy fills on screen (`#2b2d42` and `#4a4e69` with white text) to light tints in print (`#f0f4f8` with 1.5pt rules above and below, and `#e9ecef` for column headers with dark text). Both views include `print-color-adjust: exact` so browser print engines do not drop background shading.
+- Typography uses 9.5pt on 13.5pt leading in print, and 14px body with 13px to 13.5px table cells on screen.
+- Cells include `overflow-wrap: break-word` and `word-break: break-word` so long variable names wrap cleanly without horizontal scrollbars.
+- Responsive breakpoints at 768px and 480px adjust font sizes and enable horizontal scrolling on small screens rather than compressing columns.
+- UTF-8 encoding is used throughout, and the font stack prioritizes Arial Unicode MS so Hindi, Odia, Bengali, and Tamil scripts render accurately.
 
-### Questionnaire print layout (`xlsform_to_questionnaire.py`)
+### Questionnaire print layout (xlsform_to_questionnaire.py)
 
-- `@page` is A4 portrait (`size: A4 portrait; margin: 15mm 12mm;`) by default, switching to landscape if `--landscape` is passed.
-- `page-break-inside: avoid` on `.question-item` and `.note-item` prevents questions and note blocks from breaking across page margins.
-- `page-break-after: avoid` on `.section-header` ensures section headers never get stranded as orphans at the bottom of a page.
-- Section headers use light tint (`#f0f4f8`) with 1.5pt top and bottom rules (`#333333`) and `print-color-adjust: exact`.
-- Note blocks preserve their light background tint (`#f8fafc`) and 3pt blue left accent border (`#3b82f6`) on paper.
-- Container width is capped at 820px for portrait (1100px for landscape) on screen, centered with subtle drop shadow, and expands to full printable width in `@media print`.
+- `@page` defaults to A4 portrait (`size: A4 portrait; margin: 15mm 12mm;`), switching to landscape when `--landscape` is supplied.
+- `page-break-inside: avoid` on `.question-item` and `.note-item` prevents questions and notes from breaking across page margins.
+- `page-break-after: avoid` on `.section-header` keeps section headings from separating from following questions at the bottom of a page.
+- Section headers use a light tint (`#f0f4f8`) with 1.5pt top and bottom rules (`#333333`) and `print-color-adjust: exact`.
+- Note blocks maintain a light background tint (`#f8fafc`) and a 3pt blue left border (`#3b82f6`) on paper.
+- Container width is capped at 820px in portrait (1100px in landscape) on screen, centered with a subtle drop shadow, and expands to full width during print.
 
 ## Editable DOCX output
 
-The Word files are built directly from parsed survey data using `python-docx`, not by converting HTML or PDF. Nothing is scraped back out of a rendered file, so the outputs cannot drift apart.
+Word documents are generated directly from parsed survey data using `python-docx` rather than converted from HTML or PDF, preventing rendering drift between output formats.
 
-### Codebook Word document (`xlsform_to_printable.py`)
+### Codebook Word document (xlsform_to_printable.py)
 
-- One three-column table, fixed layout, matching the HTML proportions: 22%, 50%, 28% of the 277mm text block, so a Word column measures 172.8pt, 392.6pt, and 219.9pt.
-- A4 landscape with 10mm margins, the same page setup the PDF uses.
-- The Field, Question, and Answer row is marked as a repeating header row, so it reappears on every page the way `thead` does in print.
-- Rows carry `cantSplit`, which is the Word equivalent of `page-break-inside: avoid`, keeping a question with its choice list.
-- Group and repeat rows become a band merged across all three columns, tinted `#F0F4F8` with 1.5pt rules above and below, matching the print stylesheet rather than the darker screen colour.
-- Metadata notes and calculation badges keep their tint and left accent bar, drawn as paragraph shading and a paragraph border.
-- Choice lists are a borderless nested table inside the Answer cell, a narrow centred code column beside the wrapping label, with dotted row rules.
-- Long formulas are trimmed to 65 characters, as in the PDF.
+- Uses a three-column fixed table matching the HTML width distribution: 22%, 50%, and 28% of the 277mm printable width (172.8pt, 392.6pt, and 219.9pt).
+- Configured for A4 landscape with 10mm margins, matching the PDF geometry.
+- Header rows repeat across pages using Word's `tblHeader` property.
+- Table rows include `cantSplit` to prevent questions and choice lists from splitting across pages.
+- Group and repeat rows span all three columns with `#F0F4F8` shading and 1.5pt rules above and below.
+- Metadata notes and calculation badges preserve shading and left accent borders via paragraph properties.
+- Choice lists use a borderless nested table inside the Answer cell, pairing choice codes with wrapping labels.
+- Formulas longer than 65 characters are trimmed to fit table cells, matching the PDF display.
 
-### Questionnaire Word document (`xlsform_to_questionnaire.py`)
+### Questionnaire Word document (xlsform_to_questionnaire.py)
 
-- Table-free flowing document structure in A4 portrait (210mm x 297mm) with 16mm left/right and 15mm top/bottom margins (or A4 landscape with 297mm x 210mm when `--landscape` is passed).
-- Question prompts use 10.5pt bold text with paragraph spacing and `keepWithNext` (`w:keepNext`) enabled so questions stay attached to their choices and response blanks across page breaks.
-- Hints are indented 10pt with italic blue text (`#1E40AF`) and `keepWithNext` enabled.
-- Choice lists indent each option by 13pt with `( )` or `[ ]` markers in muted slate (`#64748B`) followed by the choice label, with `keepWithNext` on the leading choices to avoid page splits.
-- Open-ended response blanks are indented 12pt using muted ruled lines or brackets.
-- Section headers use 12pt bold text inside a full-width shaded paragraph (`#F0F4F8`) with top and bottom rules (`#334155`) and `keepWithNext` enabled.
-- Note callout blocks use 9.5pt text with light gray shading (`#F8FAFC`), 7pt left margin indentation, and a 3pt left paragraph border (`#3B82F6`).
+- Formatted as a table-free flowing document in A4 portrait (210mm x 297mm) with 16mm side margins and 15mm top and bottom margins, or A4 landscape (297mm x 210mm) when `--landscape` is passed.
+- Question prompts use 10.5pt bold text with paragraph spacing and `keepWithNext` (`w:keepNext`) to keep prompts attached to choices and blanks across page breaks.
+- Hints indent 10pt using italic blue text (`#1E40AF`) with `keepWithNext` enabled.
+- Choice options indent 13pt with `( )` or `[ ]` markers in muted slate (`#64748B`) followed by the choice label, setting `keepWithNext` on initial choices to prevent split lists.
+- Open-ended response blanks indent 12pt using ruled lines or brackets.
+- Section headers use 12pt bold text with `#F0F4F8` paragraph shading, top and bottom rules (`#334155`), and `keepWithNext` enabled.
+- Note callout blocks use 9.5pt text with light gray shading (`#F8FAFC`), 7pt left indentation, and a 3pt blue left border (`#3B82F6`).
 
 ### Typography and schema compliance
 
-- Every run in both DOCX generators names `Arial Unicode MS` on all four of `w:ascii`, `w:hAnsi`, `w:cs`, and `w:eastAsia`, and sets the complex-script twins `w:szCs`, `w:bCs`, and `w:iCs`. Without those, Word renders Devanagari, Odia, Tamil, and Bengali runs at a default 10pt regular instead of the size and weight requested.
-- Word validates property elements by position, not merely by presence. Both scripts use dedicated helpers (`_docx_set_child`) with ordered property schemas (`_DOCX_PPR_ORDER`, `_DOCX_RPR_ORDER`) to insert elements at their exact schema slots, eliminating Word's unreadable-content repair prompt on open.
+- Every run in both Word generators specifies Arial Unicode MS across `w:ascii`, `w:hAnsi`, `w:cs`, and `w:eastAsia`, and sets the complex-script attributes `w:szCs`, `w:bCs`, and `w:iCs`. This ensures Hindi, Bengali, Odia, and Tamil text retains the specified font, size, and weight instead of reverting to Word's default 10pt styling.
+- OpenXML ECMA-376 requires child property elements to appear in a strict order. Both generators use schema-ordered helpers (`_docx_set_child`, `_DOCX_PPR_ORDER`, `_DOCX_RPR_ORDER`) to place XML tags in their valid positions, preventing unreadable-content repair warnings when opening files in Word.
 
 ## Repository files
 
-- `xlsform_to_printable.py`: the direct codebook converter. Parses `.xlsx` files, builds 3-column HTML tables, renders landscape A4 PDFs, and writes landscape DOCX codebooks.
-- `Questionnaire/xlsform_to_questionnaire.py`: the direct interview questionnaire converter. Parses `.xlsx` files and produces clean, table-free flowing HTML, portrait A4 PDFs, and portrait DOCX questionnaires for field administration.
-- `Questionnaire/Pradhan_Qualitative_Survey_2026.xlsx`: sample questionnaire spreadsheet for qualitative field interviews.
-- `html_make_responsive.py`: post-processor for HTML exported from a survey platform. Keeps the original table layout, injects responsive and print CSS, writes a landscape A4 PDF.
-- `html_make_responsive_print.py`: alternative post-processor that rebuilds exported tables as card-style question blocks for portrait A4.
-- `backup_html_make_responsive.py`: frozen reference copy of the post-processor. Not an entry point.
-- `xlsform_to_printable_plan.md`: architecture notes, the XLSForm element mapping matrix, and the implementation roadmap.
-- `requirements.txt`: the four third-party packages, pinned. Chromium is not in here; it comes from `playwright install chromium`.
-- `Brick Kiln Literacy RCT - Household Survey.xlsx`: sample form with English and Odia labels.
+- `xlsform_to_printable.py`: Direct codebook converter. Parses `.xlsx` workbooks, constructs 3-column HTML tables, and generates landscape A4 PDFs and DOCX codebooks.
+- `Questionnaire/xlsform_to_questionnaire.py`: Direct interview questionnaire converter. Parses `.xlsx` workbooks and produces table-free flowing HTML, portrait or landscape A4 PDFs, and editable DOCX questionnaires for field administration.
+- `Pradhan Qualitative Survey 2026.xlsx`: Sample XLSForm workbook containing survey questions, choices, and settings in English and Hindi.
+- `Questionnaire/Pradhan_Qualitative_Survey_2026.xlsx`: Companion sample workbook located in the Questionnaire directory.
+- `html_make_responsive.py`: Legacy post-processor for survey-platform exported HTML. Adds responsive and print styles to existing HTML tables and renders landscape A4 PDFs.
+- `html_make_responsive_print.py`: Alternative legacy post-processor that restructures exported HTML tables into card-style question blocks for portrait A4 printing.
+- `backup_html_make_responsive.py`: Reference archive of the earlier HTML post-processor.
+- `xlsform_to_printable_plan.md`: Technical documentation containing the XLSForm element mapping matrix, calculation rules, and parser architecture.
+- `requirements.txt`: Pinned Python package dependencies (`openpyxl`, `beautifulsoup4`, `playwright`, `python-docx`).
 
-Both post-processing scripts take no arguments. They process every `.html` file in the current working directory, overwrite each one with the responsive version, and write a PDF beside it:
+Both post-processing scripts process every `.html` file in the current working directory, overwrite each file with the responsive version, and write a PDF beside it:
 
 ```bash
 python html_make_responsive.py
