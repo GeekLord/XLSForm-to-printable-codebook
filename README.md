@@ -165,6 +165,15 @@ The parser inspects the header rows in `survey` and `choices` and collects every
 
 Output filenames drop the parenthetical language code, so `label::Hindi (hi)` produces `_Hindi.html`, not `_Hindi (hi).html`.
 
+## Media images (media::image)
+
+When an XLSForm includes media image references in `survey` or `choices` sheets:
+- **Supported Columns**: `media::image::<language>`, `media::image`, `image::<language>`, and `image`.
+- **Automatic Resolution**: Image files are discovered in the same folder as the XLSForm spreadsheet, a `media/` sub-folder, or an ODK standard `<form_base>-media/` directory, with case-insensitive matching across platforms.
+- **Embedded in HTML & PDF**: Images are encoded as self-contained Base64 data URIs (`data:image/<type>;base64,...`), ensuring generated HTML and PDF files remain completely portable without broken links.
+- **Embedded in DOCX**: Images are scaled proportionally to fit page geometry and inserted into WordprocessingML drawings in codebook table cells and questionnaire flows.
+- **Missing Image Safety**: If an image referenced in the form is not found, a subtle indicator (`[Image: filename (file not found)]`) is rendered rather than failing or disrupting document layout.
+
 ## Platform metadata reference
 
 When a row type matches an automatic survey platform variable, the codebook Question column provides a plain-language explanation instead of an empty cell. (These rows are omitted from the interview questionnaire.)

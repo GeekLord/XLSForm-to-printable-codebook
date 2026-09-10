@@ -44,9 +44,18 @@ import sys
 import re
 import argparse
 import asyncio
+import base64
+import mimetypes
 from bs4 import BeautifulSoup
 import openpyxl
 from playwright.async_api import async_playwright
+
+# Optional PIL / Pillow import for proportional image sizing
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 # Optional python-docx import: Enables direct generation of editable Word (.docx) documents.
 # If python-docx is not installed, gracefully falls back to HTML and PDF generation.
@@ -311,20 +320,65 @@ td .table td {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
+
+    img.questionPrompt {
+        max-width: 100%;
+        max-height: 200px;
+        height: auto;
+        object-fit: contain;
+        page-break-inside: avoid;
+        display: block;
+        margin: 4px 0;
+    }
+
+    img.choicePrompt {
+        max-width: 100px;
+        max-height: 80px;
+        height: auto;
+        object-fit: contain;
+        page-break-inside: avoid;
+    }
+}
+
+.media-image-container {
+    margin: 4px 0;
 }
 
 img.questionPrompt { 
     max-width: 100%; 
+    max-height: 260px;
+    height: auto;
+    object-fit: contain;
     padding: 2px; 
     border: 1px solid #ddd; 
+    border-radius: 3px;
     display: block; 
     margin: 4px 0; 
 }
 
 img.choicePrompt { 
     max-width: 120px; 
+    max-height: 90px;
+    height: auto;
+    object-fit: contain;
     padding: 2px; 
     border: 1px solid #ddd; 
+    border-radius: 3px;
+    vertical-align: middle;
+    margin: 2px 4px 2px 0;
+    display: inline-block;
+}
+
+.media-image-missing {
+    font-size: 11px;
+    font-style: italic;
+    color: #868e96;
+    background: #f8f9fa;
+    border: 1px dashed #ced4da;
+    border-radius: 3px;
+    padding: 3px 6px;
+    margin: 3px 0;
+    display: inline-block;
 }
 
 .required { 
@@ -603,6 +657,137 @@ def get_lang_value(dict_of_langs, target_lang):
             return val
     return ''
 
+
+def resolve_image_path(image_filename, excel_path):
+    """
+    Locate an image file referenced in an XLSForm.
+
+    Searches:
+    1. The directory containing the XLSForm spreadsheet.
+    2. A 'media' sub-folder within the form's directory.
+    3. An ODK standard '<form_base>-media' sub-folder.
+    4. Relative sub-directories if image_filename contains path separators.
+    5. The current working directory and 'media/' in CWD.
+    6. Case-insensitive filesystem matching across all candidate locations.
+
+    Args:
+        image_filename (str): Name or relative path of the media image file.
+        excel_path (str): Filesystem path to the source XLSForm .xlsx file.
+
+    Returns:
+        str | None: Absolute path to the resolved image file, or None if not found.
+    """
+    if not image_filename or not str(image_filename).strip():
+        return None
+
+    image_filename = str(image_filename).strip().replace('\\', '/')
+    base_image_name = os.path.basename(image_filename)
+
+    form_dir = os.path.dirname(os.path.abspath(excel_path)) if excel_path else os.getcwd()
+    form_base = os.path.splitext(os.path.basename(excel_path))[0] if excel_path else ''
+
+    candidate_dirs = [
+        form_dir,
+        os.path.join(form_dir, 'media'),
+        os.path.join(form_dir, f"{form_base}-media"),
+    ]
+    if os.path.abspath(os.getcwd()) != os.path.abspath(form_dir):
+        candidate_dirs.extend([
+            os.getcwd(),
+            os.path.join(os.getcwd(), 'media')
+        ])
+
+    if '/' in image_filename:
+        for cdir in list(candidate_dirs):
+            candidate_dirs.append(os.path.join(cdir, os.path.dirname(image_filename)))
+
+    # Direct match check
+    for cdir in candidate_dirs:
+        p1 = os.path.normpath(os.path.join(cdir, image_filename))
+        if os.path.isfile(p1):
+            return p1
+        p2 = os.path.normpath(os.path.join(cdir, base_image_name))
+        if os.path.isfile(p2):
+            return p2
+
+    # Case-insensitive match check across candidate directories
+    target_lower = base_image_name.lower()
+    for cdir in candidate_dirs:
+        if os.path.isdir(cdir):
+            try:
+                for entry in os.listdir(cdir):
+                    if entry.lower() == target_lower:
+                        full_p = os.path.normpath(os.path.join(cdir, entry))
+                        if os.path.isfile(full_p):
+                            return full_p
+            except OSError:
+                pass
+
+    return None
+
+
+def image_to_base64_data_uri(image_path):
+    """
+    Encode an image file on disk into a self-contained Base64 data URI string.
+
+    Args:
+        image_path (str): Filesystem path to the image file.
+
+    Returns:
+        str | None: 'data:image/<type>;base64,<payload>' or None on failure.
+    """
+    if not image_path or not os.path.isfile(image_path):
+        return None
+    try:
+        mime, _ = mimetypes.guess_type(image_path)
+        if not mime or not mime.startswith('image/'):
+            ext = os.path.splitext(image_path)[1].lower()
+            ext_map = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.gif': 'image/gif',
+                '.webp': 'image/webp',
+                '.svg': 'image/svg+xml',
+                '.bmp': 'image/bmp'
+            }
+            mime = ext_map.get(ext, 'image/jpeg')
+
+        with open(image_path, 'rb') as f:
+            b64_str = base64.b64encode(f.read()).decode('ascii')
+        return f"data:{mime};base64,{b64_str}"
+    except Exception:
+        return None
+
+
+def get_scaled_image_dimensions(image_path, max_width_mm, max_height_mm):
+    """
+    Calculate proportional image dimensions (in mm) constrained by max width and height.
+
+    Args:
+        image_path (str): Filesystem path to the image.
+        max_width_mm (float): Maximum allowable width in millimeters.
+        max_height_mm (float): Maximum allowable height in millimeters.
+
+    Returns:
+        tuple[float, float]: (scaled_width_mm, scaled_height_mm)
+    """
+    if not PIL_AVAILABLE or not image_path or not os.path.isfile(image_path):
+        return max_width_mm, max_height_mm
+    try:
+        with Image.open(image_path) as img:
+            w_px, h_px = img.size
+            if w_px <= 0 or h_px <= 0:
+                return max_width_mm, max_height_mm
+            aspect = w_px / h_px
+            w_from_h = max_height_mm * aspect
+            if w_from_h <= max_width_mm:
+                return round(w_from_h, 2), round(max_height_mm, 2)
+            else:
+                return round(max_width_mm, 2), round(max_width_mm / aspect, 2)
+    except Exception:
+        return max_width_mm, max_height_mm
+
 # ==============================================================================
 # EXCEL WORKBOOK PARSER (XLSFormParser)
 # ==============================================================================
@@ -740,6 +925,7 @@ class XLSFormParser:
                 choices[list_name_val] = []
 
             labels = {}
+            images = {}
             for lang in self.languages:
                 col_idx = get_header_index(header_map, f'label::{lang}', 'label')
                 if col_idx is None and lang != 'Default':
@@ -756,9 +942,37 @@ class XLSFormParser:
                 else:
                     labels[lang] = name_val
 
+                # Option Media Image per language
+                img_col_idx = get_header_index(header_map, f'media::image::{lang}', f'image::{lang}')
+                if img_col_idx is None and lang != 'Default':
+                    for h, idx in header_map.items():
+                        h_lower = h.lower()
+                        if (h_lower.startswith('media::image::') or h_lower.startswith('image::')) and lang.lower() in h_lower:
+                            img_col_idx = idx
+                            break
+                if img_col_idx is None:
+                    img_col_idx = get_header_index(header_map, 'media::image', 'image')
+
+                if img_col_idx is not None and img_col_idx < len(row_cells):
+                    img_val = row_cells[img_col_idx].value
+                    images[lang] = str(img_val).strip() if img_val is not None else ''
+                else:
+                    images[lang] = ''
+
+            # Fallback for unqualified choice image column
+            def_img_col = get_header_index(header_map, 'media::image', 'image')
+            if def_img_col is not None and def_img_col < len(row_cells):
+                def_img_val = str(row_cells[def_img_col].value or '').strip()
+                if def_img_val:
+                    images['Default'] = def_img_val
+                    for l in self.languages:
+                        if not images.get(l):
+                            images[l] = def_img_val
+
             choices[list_name_val].append({
                 'name': name_val,
-                'labels': labels
+                'labels': labels,
+                'images': images
             })
 
         return choices
@@ -812,6 +1026,7 @@ class XLSFormParser:
 
             labels = {}
             hints = {}
+            images = {}
             constraint_msgs = {}
 
             for lang in self.languages:
@@ -837,6 +1052,18 @@ class XLSFormParser:
                     col_idx = get_header_index(header_map, 'hint')
                 hints[lang] = str(row_cells[col_idx].value or '').strip() if (col_idx is not None and col_idx < len(row_cells) and row_cells[col_idx].value is not None) else ''
 
+                # Localized question media image
+                col_idx = get_header_index(header_map, f'media::image::{lang}', f'image::{lang}')
+                if col_idx is None and lang != 'Default':
+                    for h, idx in header_map.items():
+                        h_lower = h.lower()
+                        if (h_lower.startswith('media::image::') or h_lower.startswith('image::')) and lang.lower() in h_lower:
+                            col_idx = idx
+                            break
+                if col_idx is None:
+                    col_idx = get_header_index(header_map, 'media::image', 'image')
+                images[lang] = str(row_cells[col_idx].value or '').strip() if (col_idx is not None and col_idx < len(row_cells) and row_cells[col_idx].value is not None) else ''
+
                 # Localized constraint validation message
                 col_idx = get_header_index(header_map, f'constraint_message::{lang}')
                 if col_idx is None and lang != 'Default':
@@ -847,6 +1074,16 @@ class XLSFormParser:
                 if col_idx is None:
                     col_idx = get_header_index(header_map, 'constraint_message')
                 constraint_msgs[lang] = str(row_cells[col_idx].value or '').strip() if (col_idx is not None and col_idx < len(row_cells) and row_cells[col_idx].value is not None) else ''
+
+            # Fallback for unqualified question image column
+            def_img_col = get_header_index(header_map, 'media::image', 'image')
+            if def_img_col is not None and def_img_col < len(row_cells):
+                def_img_val = str(row_cells[def_img_col].value or '').strip()
+                if def_img_val:
+                    images['Default'] = def_img_val
+                    for l in self.languages:
+                        if not images.get(l):
+                            images[l] = def_img_val
 
             rel_col = get_header_index(header_map, 'relevant', 'relevance')
             relevance = str(row_cells[rel_col].value or '').strip() if (rel_col is not None and rel_col < len(row_cells) and row_cells[rel_col].value is not None) else ''
@@ -863,6 +1100,7 @@ class XLSFormParser:
                 'required': is_required,
                 'labels': labels,
                 'hints': hints,
+                'images': images,
                 'constraint_msgs': constraint_msgs,
                 'relevance': relevance,
                 'constraint': constraint,
@@ -1008,6 +1246,26 @@ def build_codebook_html(parser, language='Default'):
         if q_label:
             td_q.append(q_label)
 
+        # Media Image Rendering for Question Prompt
+        q_image = get_lang_value(item.get('images', {}), language)
+        if q_image:
+            img_path = resolve_image_path(q_image, parser.excel_path)
+            if img_path:
+                data_uri = image_to_base64_data_uri(img_path)
+                if data_uri:
+                    img_div = soup.new_tag('div', attrs={'class': 'media-image-container'})
+                    img_tag = soup.new_tag('img', attrs={
+                        'class': 'questionPrompt',
+                        'src': data_uri,
+                        'alt': q_label or q_image
+                    })
+                    img_div.append(img_tag)
+                    td_q.append(img_div)
+            else:
+                missing_div = soup.new_tag('div', attrs={'class': 'media-image-missing'})
+                missing_div.string = f"[Image: {q_image} (file not found)]"
+                td_q.append(missing_div)
+
         # Platform Metadata Tagging: If variable type is a known background metadata field
         if base_type in METADATA_DESCRIPTIONS:
             platform_info, desc_text = METADATA_DESCRIPTIONS[base_type]
@@ -1066,6 +1324,25 @@ def build_codebook_html(parser, language='Default'):
                     c_td_val.string = choice['name']
                     
                     c_td_lbl = soup.new_tag('td', attrs={'style': 'vertical-align: top; padding: 2px 0 2px 5px; border-left: 1px solid #ddd; overflow-wrap: break-word; word-break: break-word;'})
+
+                    # Choice Media Image
+                    c_image = get_lang_value(choice.get('images', {}), language)
+                    if c_image:
+                        c_img_path = resolve_image_path(c_image, parser.excel_path)
+                        if c_img_path:
+                            c_data_uri = image_to_base64_data_uri(c_img_path)
+                            if c_data_uri:
+                                c_img_tag = soup.new_tag('img', attrs={
+                                    'class': 'choicePrompt',
+                                    'src': c_data_uri,
+                                    'alt': c_image
+                                })
+                                c_td_lbl.append(c_img_tag)
+                        else:
+                            c_missing = soup.new_tag('div', attrs={'class': 'media-image-missing'})
+                            c_missing.string = f"[Image: {c_image} (not found)]"
+                            c_td_lbl.append(c_missing)
+
                     c_span = soup.new_tag('span')
                     c_span.string = get_lang_value(choice['labels'], language) or choice['name']
                     c_td_lbl.append(c_span)
@@ -1289,10 +1566,10 @@ def _docx_reset_cell(cell):
     return cell
 
 
-def _docx_add_cell_paragraph(cell, space_after=1.0):
+def _docx_add_cell_paragraph(cell, space_before=0.0, space_after=1.0):
     """Add a compact paragraph to a table cell."""
     paragraph = cell.add_paragraph()
-    return _docx_tight_paragraph(paragraph, space_after=space_after)
+    return _docx_tight_paragraph(paragraph, space_before=space_before, space_after=space_after)
 
 
 def _docx_shade_cell(cell, fill):
@@ -1434,7 +1711,7 @@ def _docx_setup_document(title_text):
     return doc
 
 
-def _docx_add_choice_table(cell, choice_list, language, width_mm):
+def _docx_add_choice_table(cell, choice_list, language, width_mm, excel_path=None):
     """Render the two-column code/label choice list inside the Answer cell."""
     code_width = min(9.0, width_mm * 0.16)
     label_width = max(width_mm - code_width, code_width)
@@ -1456,6 +1733,20 @@ def _docx_add_choice_table(cell, choice_list, language, width_mm):
 
         label_cell = _docx_reset_cell(row.cells[1])
         _docx_cell_borders(label_cell, left=('4', 'DDDDDD'))
+
+        # Choice image in DOCX
+        c_image = get_lang_value(choice.get('images', {}), language)
+        if c_image and excel_path:
+            img_path = resolve_image_path(c_image, excel_path)
+            if img_path and os.path.isfile(img_path):
+                scaled_w, scaled_h = get_scaled_image_dimensions(img_path, max_width_mm=min(28.0, label_width - 2.0), max_height_mm=20.0)
+                img_para = _docx_add_cell_paragraph(label_cell, space_after=1.0)
+                r_img = img_para.add_run()
+                r_img.add_picture(img_path, width=Mm(scaled_w), height=Mm(scaled_h))
+            else:
+                miss_para = _docx_add_cell_paragraph(label_cell, space_after=1.0)
+                _docx_style_run(miss_para.add_run(f"[Image: {c_image} (not found)]"), size=DOCX_TINY_PT, color=DOCX_COLOR_META_TEXT, italic=True)
+
         label_para = _docx_add_cell_paragraph(label_cell, space_after=0.0)
         label_text = get_lang_value(choice['labels'], language) or choice['name']
         _docx_style_run(label_para.add_run(label_text), size=DOCX_SMALL_PT)
@@ -1547,6 +1838,23 @@ def build_codebook_docx(parser, language='Default'):
         label_para = _docx_add_cell_paragraph(question_cell, space_after=0.0)
         _docx_style_run(label_para.add_run(q_label or ''))
 
+        # Question Media Image in DOCX
+        q_image = get_lang_value(item.get('images', {}), language)
+        if q_image:
+            img_path = resolve_image_path(q_image, parser.excel_path)
+            if img_path and os.path.isfile(img_path):
+                scaled_w, scaled_h = get_scaled_image_dimensions(
+                    img_path,
+                    max_width_mm=min(120.0, col_widths[1] - 8.0),
+                    max_height_mm=75.0
+                )
+                img_para = _docx_add_cell_paragraph(question_cell, space_before=2.0, space_after=3.0)
+                r_img = img_para.add_run()
+                r_img.add_picture(img_path, width=Mm(scaled_w), height=Mm(scaled_h))
+            else:
+                miss_para = _docx_add_cell_paragraph(question_cell, space_before=2.0, space_after=2.0)
+                _docx_style_run(miss_para.add_run(f"[Image: {q_image} (file not found)]"), size=DOCX_TINY_PT, color=DOCX_COLOR_META_TEXT, italic=True)
+
         if base_type in METADATA_DESCRIPTIONS:
             platform_info, desc_text = METADATA_DESCRIPTIONS[base_type]
             meta_para = _docx_add_cell_paragraph(question_cell, space_after=0.0)
@@ -1588,7 +1896,7 @@ def build_codebook_docx(parser, language='Default'):
             choice_list = get_choice_list_by_name(parser.choices, list_name)
 
         if choice_list:
-            _docx_add_choice_table(answer_cell, choice_list, language, col_widths[2] - 4.0)
+            _docx_add_choice_table(answer_cell, choice_list, language, col_widths[2] - 4.0, excel_path=parser.excel_path)
         else:
             blank_para = _docx_add_cell_paragraph(answer_cell, space_after=0.0)
             _docx_style_run(blank_para.add_run(''))

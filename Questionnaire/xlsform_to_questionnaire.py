@@ -48,9 +48,18 @@ import sys
 import re
 import argparse
 import asyncio
+import base64
+import mimetypes
 from bs4 import BeautifulSoup
 import openpyxl
 from playwright.async_api import async_playwright
+
+# Optional PIL / Pillow import for proportional image sizing
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 # Optional python-docx import: Enables direct generation of editable Word (.docx) documents.
 # If python-docx is not installed in the environment, the script gracefully falls back
@@ -224,6 +233,46 @@ body {
     line-height: 1.4;
 }
 
+/* Media Images */
+.media-image-container {
+    margin: 8px 0 10px 0;
+}
+
+img.questionPrompt {
+    max-width: 100%;
+    max-height: 280px;
+    height: auto;
+    object-fit: contain;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    display: block;
+    margin: 6px 0;
+}
+
+img.choicePrompt {
+    max-width: 120px;
+    max-height: 90px;
+    height: auto;
+    object-fit: contain;
+    border: 1px solid #cbd5e1;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin: 2px 6px 2px 0;
+    display: inline-block;
+}
+
+.media-image-missing {
+    font-size: 11.5px;
+    font-style: italic;
+    color: #64748b;
+    background: #f1f5f9;
+    border: 1px dashed #cbd5e1;
+    border-radius: 3px;
+    padding: 4px 8px;
+    margin: 6px 0;
+    display: inline-block;
+}
+
 /* Mobile responsive adjustments */
 @media screen and (max-width: 768px) {
     body {
@@ -278,6 +327,24 @@ body {
         border-bottom: 0.5pt solid #e2e8f0;
         margin-bottom: 10pt;
         padding-bottom: 8pt;
+    }
+
+    img.questionPrompt {
+        max-width: 100%;
+        max-height: 220px;
+        height: auto;
+        object-fit: contain;
+        page-break-inside: avoid;
+        display: block;
+        margin: 6px 0;
+    }
+
+    img.choicePrompt {
+        max-width: 90px;
+        max-height: 70px;
+        height: auto;
+        object-fit: contain;
+        page-break-inside: avoid;
     }
 }
 """
@@ -450,6 +517,137 @@ def get_lang_value(dict_of_langs, target_lang):
             return val
     return ''
 
+
+def resolve_image_path(image_filename, excel_path):
+    """
+    Locate an image file referenced in an XLSForm.
+
+    Searches:
+    1. The directory containing the XLSForm spreadsheet.
+    2. A 'media' sub-folder within the form's directory.
+    3. An ODK standard '<form_base>-media' sub-folder.
+    4. Relative sub-directories if image_filename contains path separators.
+    5. The current working directory and 'media/' in CWD.
+    6. Case-insensitive filesystem matching across all candidate locations.
+
+    Args:
+        image_filename (str): Name or relative path of the media image file.
+        excel_path (str): Filesystem path to the source XLSForm .xlsx file.
+
+    Returns:
+        str | None: Absolute path to the resolved image file, or None if not found.
+    """
+    if not image_filename or not str(image_filename).strip():
+        return None
+
+    image_filename = str(image_filename).strip().replace('\\', '/')
+    base_image_name = os.path.basename(image_filename)
+
+    form_dir = os.path.dirname(os.path.abspath(excel_path)) if excel_path else os.getcwd()
+    form_base = os.path.splitext(os.path.basename(excel_path))[0] if excel_path else ''
+
+    candidate_dirs = [
+        form_dir,
+        os.path.join(form_dir, 'media'),
+        os.path.join(form_dir, f"{form_base}-media"),
+    ]
+    if os.path.abspath(os.getcwd()) != os.path.abspath(form_dir):
+        candidate_dirs.extend([
+            os.getcwd(),
+            os.path.join(os.getcwd(), 'media')
+        ])
+
+    if '/' in image_filename:
+        for cdir in list(candidate_dirs):
+            candidate_dirs.append(os.path.join(cdir, os.path.dirname(image_filename)))
+
+    # Direct match check
+    for cdir in candidate_dirs:
+        p1 = os.path.normpath(os.path.join(cdir, image_filename))
+        if os.path.isfile(p1):
+            return p1
+        p2 = os.path.normpath(os.path.join(cdir, base_image_name))
+        if os.path.isfile(p2):
+            return p2
+
+    # Case-insensitive match check across candidate directories
+    target_lower = base_image_name.lower()
+    for cdir in candidate_dirs:
+        if os.path.isdir(cdir):
+            try:
+                for entry in os.listdir(cdir):
+                    if entry.lower() == target_lower:
+                        full_p = os.path.normpath(os.path.join(cdir, entry))
+                        if os.path.isfile(full_p):
+                            return full_p
+            except OSError:
+                pass
+
+    return None
+
+
+def image_to_base64_data_uri(image_path):
+    """
+    Encode an image file on disk into a self-contained Base64 data URI string.
+
+    Args:
+        image_path (str): Filesystem path to the image file.
+
+    Returns:
+        str | None: 'data:image/<type>;base64,<payload>' or None on failure.
+    """
+    if not image_path or not os.path.isfile(image_path):
+        return None
+    try:
+        mime, _ = mimetypes.guess_type(image_path)
+        if not mime or not mime.startswith('image/'):
+            ext = os.path.splitext(image_path)[1].lower()
+            ext_map = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.gif': 'image/gif',
+                '.webp': 'image/webp',
+                '.svg': 'image/svg+xml',
+                '.bmp': 'image/bmp'
+            }
+            mime = ext_map.get(ext, 'image/jpeg')
+
+        with open(image_path, 'rb') as f:
+            b64_str = base64.b64encode(f.read()).decode('ascii')
+        return f"data:{mime};base64,{b64_str}"
+    except Exception:
+        return None
+
+
+def get_scaled_image_dimensions(image_path, max_width_mm, max_height_mm):
+    """
+    Calculate proportional image dimensions (in mm) constrained by max width and height.
+
+    Args:
+        image_path (str): Filesystem path to the image.
+        max_width_mm (float): Maximum allowable width in millimeters.
+        max_height_mm (float): Maximum allowable height in millimeters.
+
+    Returns:
+        tuple[float, float]: (scaled_width_mm, scaled_height_mm)
+    """
+    if not PIL_AVAILABLE or not image_path or not os.path.isfile(image_path):
+        return max_width_mm, max_height_mm
+    try:
+        with Image.open(image_path) as img:
+            w_px, h_px = img.size
+            if w_px <= 0 or h_px <= 0:
+                return max_width_mm, max_height_mm
+            aspect = w_px / h_px
+            w_from_h = max_height_mm * aspect
+            if w_from_h <= max_width_mm:
+                return round(w_from_h, 2), round(max_height_mm, 2)
+            else:
+                return round(max_width_mm, 2), round(max_width_mm / aspect, 2)
+    except Exception:
+        return max_width_mm, max_height_mm
+
 # ==============================================================================
 # EXCEL WORKBOOK PARSER (XLSFormParser)
 # ==============================================================================
@@ -592,6 +790,7 @@ class XLSFormParser:
                 choices[list_name_val] = []
 
             labels = {}
+            images = {}
             for lang in self.languages:
                 col_idx = get_header_index(header_map, f'label::{lang}', 'label')
                 if col_idx is None and lang != 'Default':
@@ -608,9 +807,37 @@ class XLSFormParser:
                 else:
                     labels[lang] = name_val
 
+                # Option Media Image per language
+                img_col_idx = get_header_index(header_map, f'media::image::{lang}', f'image::{lang}')
+                if img_col_idx is None and lang != 'Default':
+                    for h, idx in header_map.items():
+                        h_lower = h.lower()
+                        if (h_lower.startswith('media::image::') or h_lower.startswith('image::')) and lang.lower() in h_lower:
+                            img_col_idx = idx
+                            break
+                if img_col_idx is None:
+                    img_col_idx = get_header_index(header_map, 'media::image', 'image')
+
+                if img_col_idx is not None and img_col_idx < len(row_cells):
+                    img_val = row_cells[img_col_idx].value
+                    images[lang] = str(img_val).strip() if img_val is not None else ''
+                else:
+                    images[lang] = ''
+
+            # Fallback for unqualified choice image column
+            def_img_col = get_header_index(header_map, 'media::image', 'image')
+            if def_img_col is not None and def_img_col < len(row_cells):
+                def_img_val = str(row_cells[def_img_col].value or '').strip()
+                if def_img_val:
+                    images['Default'] = def_img_val
+                    for l in self.languages:
+                        if not images.get(l):
+                            images[l] = def_img_val
+
             choices[list_name_val].append({
                 'name': name_val,
-                'labels': labels
+                'labels': labels,
+                'images': images
             })
 
         return choices
@@ -653,6 +880,7 @@ class XLSFormParser:
 
             labels = {}
             hints = {}
+            images = {}
 
             for lang in self.languages:
                 # Resolve localized question label
@@ -677,11 +905,34 @@ class XLSFormParser:
                     col_idx = get_header_index(header_map, 'hint')
                 hints[lang] = str(row_cells[col_idx].value or '').strip() if (col_idx is not None and col_idx < len(row_cells) and row_cells[col_idx].value is not None) else ''
 
+                # Resolve localized question media image
+                col_idx = get_header_index(header_map, f'media::image::{lang}', f'image::{lang}')
+                if col_idx is None and lang != 'Default':
+                    for h, idx in header_map.items():
+                        h_lower = h.lower()
+                        if (h_lower.startswith('media::image::') or h_lower.startswith('image::')) and lang.lower() in h_lower:
+                            col_idx = idx
+                            break
+                if col_idx is None:
+                    col_idx = get_header_index(header_map, 'media::image', 'image')
+                images[lang] = str(row_cells[col_idx].value or '').strip() if (col_idx is not None and col_idx < len(row_cells) and row_cells[col_idx].value is not None) else ''
+
+            # Fallback for unqualified question image column
+            def_img_col = get_header_index(header_map, 'media::image', 'image')
+            if def_img_col is not None and def_img_col < len(row_cells):
+                def_img_val = str(row_cells[def_img_col].value or '').strip()
+                if def_img_val:
+                    images['Default'] = def_img_val
+                    for l in self.languages:
+                        if not images.get(l):
+                            images[l] = def_img_val
+
             survey_rows.append({
                 'type': type_val,
                 'name': name_val,
                 'labels': labels,
                 'hints': hints,
+                'images': images,
             })
 
         return survey_rows
@@ -863,6 +1114,27 @@ def build_questionnaire_html(parser, language='Default', landscape=False):
             note_div = soup.new_tag('div', attrs={'class': 'note-text'})
             note_div.append(BeautifulSoup(q_label, 'html.parser'))
             note_item.append(note_div)
+
+            # Note Media Image
+            note_image = get_lang_value(item.get('images', {}), language)
+            if note_image:
+                img_path = resolve_image_path(note_image, parser.excel_path)
+                if img_path:
+                    data_uri = image_to_base64_data_uri(img_path)
+                    if data_uri:
+                        img_div = soup.new_tag('div', attrs={'class': 'media-image-container'})
+                        img_tag = soup.new_tag('img', attrs={
+                            'class': 'questionPrompt',
+                            'src': data_uri,
+                            'alt': note_image
+                        })
+                        img_div.append(img_tag)
+                        note_item.append(img_div)
+                else:
+                    missing_div = soup.new_tag('div', attrs={'class': 'media-image-missing'})
+                    missing_div.string = f"[Image: {note_image} (file not found)]"
+                    note_item.append(missing_div)
+
             container.append(note_item)
             continue
 
@@ -873,6 +1145,26 @@ def build_questionnaire_html(parser, language='Default', landscape=False):
         div_prompt = soup.new_tag('div', attrs={'class': 'question-prompt'})
         div_prompt.append(BeautifulSoup(q_label, 'html.parser'))
         q_item.append(div_prompt)
+
+        # Question Prompt Media Image
+        q_image = get_lang_value(item.get('images', {}), language)
+        if q_image:
+            img_path = resolve_image_path(q_image, parser.excel_path)
+            if img_path:
+                data_uri = image_to_base64_data_uri(img_path)
+                if data_uri:
+                    img_div = soup.new_tag('div', attrs={'class': 'media-image-container'})
+                    img_tag = soup.new_tag('img', attrs={
+                        'class': 'questionPrompt',
+                        'src': data_uri,
+                        'alt': q_label or q_image
+                    })
+                    img_div.append(img_tag)
+                    q_item.append(img_div)
+            else:
+                missing_div = soup.new_tag('div', attrs={'class': 'media-image-missing'})
+                missing_div.string = f"[Image: {q_image} (file not found)]"
+                q_item.append(missing_div)
 
         # Guidance Hint (italicized notes)
         q_hint = get_lang_value(item['hints'], language)
@@ -895,6 +1187,25 @@ def build_questionnaire_html(parser, language='Default', landscape=False):
                     c_marker.string = marker_str
 
                     c_lbl = soup.new_tag('span', attrs={'class': 'choice-label'})
+
+                    # Choice Media Image
+                    c_image = get_lang_value(choice.get('images', {}), language)
+                    if c_image:
+                        c_img_path = resolve_image_path(c_image, parser.excel_path)
+                        if c_img_path:
+                            c_data_uri = image_to_base64_data_uri(c_img_path)
+                            if c_data_uri:
+                                c_img_tag = soup.new_tag('img', attrs={
+                                    'class': 'choicePrompt',
+                                    'src': c_data_uri,
+                                    'alt': c_image
+                                })
+                                c_lbl.append(c_img_tag)
+                        else:
+                            c_missing = soup.new_tag('div', attrs={'class': 'media-image-missing'})
+                            c_missing.string = f"[Image: {c_image} (not found)]"
+                            c_lbl.append(c_missing)
+
                     choice_label = get_lang_value(choice['labels'], language) or choice['name']
                     c_lbl.append(BeautifulSoup(choice_label, 'html.parser'))
 
@@ -1331,6 +1642,39 @@ def _docx_add_formatted_paragraphs(
     return paragraphs
 
 
+def _docx_add_image_flow(doc, img_path, max_width_mm=135.0, max_height_mm=85.0, keep_next=False, in_note=False):
+    """
+    Insert a proportionally scaled image paragraph into the questionnaire Word document flow.
+
+    Args:
+        doc (docx.Document): Active Word document.
+        img_path (str): Filesystem path to the image file.
+        max_width_mm (float): Maximum image width in millimeters.
+        max_height_mm (float): Maximum image height in millimeters.
+        keep_next (bool): If True, attaches w:keepNext to prevent page breaks between image and choices.
+        in_note (bool): If True, applies note callout styling (border and shading).
+
+    Returns:
+        docx.text.paragraph.Paragraph: Created paragraph containing the image.
+    """
+    scaled_w, scaled_h = get_scaled_image_dimensions(img_path, max_width_mm, max_height_mm)
+    p = doc.add_paragraph()
+    _docx_tight_paragraph(p, space_before=2.0, space_after=4.0)
+    ppr = p._element.get_or_add_pPr()
+    if keep_next:
+        _docx_toggle(ppr, _DOCX_PPR_ORDER, 'w:keepNext')
+    if in_note:
+        ind = _docx_set_child(ppr, _DOCX_PPR_ORDER, 'w:ind')
+        ind.set(qn('w:left'), str(int(round(14.0 * 20))))
+        ind.set(qn('w:right'), str(int(round(8.0 * 20))))
+        _docx_set_child(ppr, _DOCX_PPR_ORDER, 'w:shd', _docx_shading(DOCX_FILL_NOTE))
+        pbdr = _docx_set_child(ppr, _DOCX_PPR_ORDER, 'w:pBdr')
+        pbdr.append(_docx_border('left', sz='24', color=DOCX_COLOR_NOTE_BORDER, space='8'))
+    run = p.add_run()
+    run.add_picture(img_path, width=Mm(scaled_w), height=Mm(scaled_h))
+    return p
+
+
 def _docx_add_section_header(doc, label):
     """
     Add a styled group/repeat section header band to the Word document.
@@ -1503,6 +1847,15 @@ def build_questionnaire_docx(parser, language='Default', landscape=False):
                 shading=DOCX_FILL_NOTE,
                 left_border=('24', DOCX_COLOR_NOTE_BORDER, '8')
             )
+            note_image = get_lang_value(item.get('images', {}), language)
+            if note_image:
+                img_path = resolve_image_path(note_image, parser.excel_path)
+                if img_path and os.path.isfile(img_path):
+                    _docx_add_image_flow(doc, img_path, max_width_mm=135.0, max_height_mm=85.0, in_note=True)
+                else:
+                    miss_p = doc.add_paragraph()
+                    _docx_tight_paragraph(miss_p, space_before=2.0, space_after=4.0)
+                    _docx_style_run(miss_p.add_run(f"[Image: {note_image} (file not found)]"), size=DOCX_SMALL_PT, color='94A3B8', italic=True)
             continue
 
         # 7. Question Prompt (bold question text with keep-with-next pagination protection)
@@ -1518,6 +1871,18 @@ def build_questionnaire_docx(parser, language='Default', landscape=False):
             space_after=2.0 if q_hint else (2.0 if has_choices else 2.0),
             keep_with_next=True
         )
+
+        # Question Prompt Media Image
+        q_image = get_lang_value(item.get('images', {}), language)
+        if q_image:
+            img_path = resolve_image_path(q_image, parser.excel_path)
+            if img_path and os.path.isfile(img_path):
+                _docx_add_image_flow(doc, img_path, max_width_mm=135.0, max_height_mm=85.0, keep_next=True)
+            else:
+                miss_p = doc.add_paragraph()
+                _docx_tight_paragraph(miss_p, space_before=1.0, space_after=3.0)
+                _docx_toggle(miss_p._element.get_or_add_pPr(), _DOCX_PPR_ORDER, 'w:keepNext')
+                _docx_style_run(miss_p.add_run(f"[Image: {q_image} (file not found)]"), size=DOCX_SMALL_PT, color='94A3B8', italic=True)
 
         # 8. Guidance Hint (italicized enumerator note)
         if q_hint:
@@ -1548,6 +1913,16 @@ def build_questionnaire_docx(parser, language='Default', landscape=False):
 
                     m_run = cp.add_run(marker_str)
                     _docx_style_run(m_run, size=DOCX_BODY_PT, color='64748B')
+
+                    # Choice Media Image in DOCX
+                    c_image = get_lang_value(choice.get('images', {}), language)
+                    if c_image:
+                        c_img_path = resolve_image_path(c_image, parser.excel_path)
+                        if c_img_path and os.path.isfile(c_img_path):
+                            scaled_w, scaled_h = get_scaled_image_dimensions(c_img_path, max_width_mm=26.0, max_height_mm=20.0)
+                            r_cimg = cp.add_run()
+                            r_cimg.add_picture(c_img_path, width=Mm(scaled_w), height=Mm(scaled_h))
+                            cp.add_run(' ')
 
                     choice_label = get_lang_value(choice['labels'], language) or choice['name']
                     l_run = cp.add_run(choice_label)
